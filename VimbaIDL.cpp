@@ -519,11 +519,14 @@ int close_preview()
 	//: Stop the capture engine (API) (correspond to pCamera->StartCapture )	pCamera->EndCapture();	//: flush the frame queue (correspond to pCamera->QueueFrame )	pCamera->FlushQueue();	//: revoke all frame from the API (correspond to pCamera->AnnounceFrame )	pCamera->RevokeAllFrames();
 
 	pPreviewHandler->async_pframe->UnregisterObserver();
+
+	return 1;
 }
 
 int get_preview_frame()
 {
 	//if (!checkReady()) return 0;
+	return 1;
 }
 
 
