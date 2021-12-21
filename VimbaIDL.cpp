@@ -107,7 +107,7 @@ public:
 		isBusy.store(false);
 	}
 
-	void copy_image(const VmbUchar_t* idlbuffer)
+	void copy_image(const UINT16* idlbuffer)
 	{
 		do {
 			sleep_milisecond(1);
@@ -531,6 +531,41 @@ int get_preview_frame()
 
 
 
+struct STime {
+	UINT16 hour;
+	UINT16 minute;
+	UINT16 second;
+	UINT16 milisecond;
+	UINT16 microsecond;
+	UINT16 nanoosecond;
+};
+
+STime timestamp_to_STime(const VmbUint64_t timestamp)
+{
+
+	UINT64 factor = 1000 * 1000 * 1000;
+	UINT64 total_seconds = timestamp / factor;
+	UINT64 total_nanoseconds = timestamp / factor;
+
+	UINT64 hour   = total_seconds / 60 / 60;
+	UINT64 minute = (total_seconds - hour*60*60) / 60;
+	UINT64 second = total_seconds - hour * 60 * 60 - minute * 60;
+
+	UINT64 milisecond  = total_nanoseconds / 1000 / 1000;
+	UINT64 microsecond = (total_nanoseconds - milisecond * 1000 * 1000) / 1000;
+	UINT64 nanosecond  = total_nanoseconds - milisecond * 1000 * 1000 - microsecond * 1000;
+
+	STime st;
+	st.hour        = (UINT16) hour;
+	st.minute      = (UINT16) minute;
+	st.second      = (UINT16) second;
+	st.milisecond  = (UINT16) milisecond;
+	st.microsecond = (UINT16) microsecond;
+	st.nanoosecond = (UINT16) nanosecond;
+
+	return std::move(st);
+}
+
 }
 
 /****************************************************************/
@@ -631,7 +666,7 @@ int IDL_STDCALL StartVimbaPreview(int argc, void* argv[])
 
 int IDL_STDCALL GetVimbaPreview(int argc, void* argv[])
 {
-	VmbUchar_t* idlBuffer = (VmbUchar_t *)argv[0];
+	UINT16* idlBuffer = (UINT16 *)argv[0];
 
 	Vhida::pPreviewHandler->copy_image(idlBuffer);
 
@@ -644,6 +679,67 @@ int IDL_STDCALL StopVimbaPreview(int argc, void* argv[])
 	return 1;
 }
 
+/****************************************************************/
+/*  camera grab image sequence (synchronously) with header
+/*  IDL>  x=call_external(dll,'VimbaObs', nimg, imgs, times, framerate)
+/****************************************************************/
+
+
+int IDL_STDCALL VimbaObs(int argc, void* argv[])
+{
+	UINT16 nFrame = (UINT16) *((UINT16*)argv[0]);
+
+	UINT16* idlBuffer = (UINT16*)argv[1];              // idl buffer for 3d image array
+	UINT16* idlBuffer_time = (UINT16*)argv[2];         // idl buffer for timestamp 2d array
+	float*  idlBuffer_framerate = (float *)argv[3];    // idl buffer for framerate 1d array
+
+	//: acquire image
+	Vhida::vimba::FramePtrVector pFrames(nFrame);
+	if (!Vhida::grab_multiframe(pFrames)) return 0;
+
+	VmbUint32_t imageSize = Vhida::pPreviewHandler->imageSize;
+
+	// get framerate
+	double frate;
+	Vhida::get_framerate(frate);
+
+	int nTimeParam = 6;
+	//: copy memory data
+	for (int i=0; i<nFrame; ++i) 
+	{
+		Vhida::vimba::FramePtr frame = pFrames.at(i);
+
+		// get image buffer
+		VmbUchar_t* pimage;
+		frame->GetImage(pimage);
+
+		// get timestamp
+		VmbUint64_t timestamp;
+		frame->GetTimestamp(timestamp);
+
+		
+
+		// copy image memory
+		memcpy( (void*)(idlBuffer+i * imageSize * 2), (void*)(pimage) , imageSize);
+
+		// copy timestamp memory
+		auto st = Vhida::timestamp_to_STime(timestamp);
+		*(idlBuffer_time + i * nTimeParam + 0) = st.hour;
+		*(idlBuffer_time + i * nTimeParam + 1) = st.minute;
+		*(idlBuffer_time + i * nTimeParam + 2) = st.second;
+		*(idlBuffer_time + i * nTimeParam + 3) = st.milisecond;
+		*(idlBuffer_time + i * nTimeParam + 4) = st.microsecond;
+		*(idlBuffer_time + i * nTimeParam + 5) = st.microsecond;
+
+
+		// copy framerate memory
+		*(idlBuffer_framerate + i) = (float) frate;
+	}
+
+
+	return 1;
+
+}
 
 
 
