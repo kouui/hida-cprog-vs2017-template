@@ -3,3 +3,10 @@ LIBRARY
 EXPORTS
 
 Å@Å@Hello
+	VimbaInit
+	VimbaClose
+	SetVimbaExpoTime
+	SetVimbaFrameRate
+	StartVimbaPreview
+	GetVimbaPreview
+	StopVimbaPreview

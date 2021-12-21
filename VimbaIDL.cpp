@@ -349,7 +349,7 @@ int set_maximum_gev_packet()
 	return 1;
 }
 
-int set_exposure(const double value)
+int set_exposure(const double value) // [microsecond]
 {
 	if (!checkReady()) return 0;
 
@@ -533,7 +533,116 @@ int get_preview_frame()
 
 }
 
+/****************************************************************/
+/*  camera connection
+/*  IDL>  x=call_external(dll,'VimbaInit')
+/****************************************************************/
 
+int IDL_STDCALL VimbaInit(int argc, void* argv[])
+{
+	if (!Vhida::init_sys()) return 0;
+	
+	std::string cameraID = "";
+	if (!Vhida::init_camera(cameraID)) return 0;
+	
+	if (!Vhida::init_nPLS()) return 0;
+	
+	std::string xmlFile = "Z:\\conf\\Vimba\\demo.20211216.xml";
+	if (!Vhida::load_configuration(xmlFile)) return 0;
+
+	if (!Vhida::set_maximum_gev_packet()) return 0;
+
+	char message[100];
+	sprintf_s(message, "Camera %s initialized", cameraID.c_str());
+	INFO::info(message);
+	
+	return 1;
+}
+
+/****************************************************************/
+/*  camera disconnection
+/*  IDL>  x=call_external(dll,'VimbaClose')
+/****************************************************************/
+
+int IDL_STDCALL VimbaClose(int argc, void* argv[])
+{
+	if (!Vhida::close_camera()) return 0;
+	if (!Vhida::close_sys()) return 0;
+
+	INFO::info("Camera disconnected");
+	return 1;
+}
+
+/****************************************************************/
+/*  set camera exposure
+/*  IDL>  x=call_external(dir+'FlirIDL.dll','SetFlirExpo',50.,/all_value,/cdecl)
+/****************************************************************/
+
+int IDL_STDCALL SetVimbaExpoTime(int argc, float argv[])
+{
+	double expotime;         // [miliseconds]
+	//double expotime_current; // [miliseconds]
+
+	expotime = (double)argv[0];
+
+	if (!Vhida::set_exposure(expotime*1000.)) return 0;
+
+	return 1;
+}
+
+/****************************************************************/
+/*  set camera framerate
+/*  IDL>  x=call_external(dll,'SetVimbaFrameRate', 20.,/all_value,/cdecl)
+/****************************************************************/
+
+int IDL_STDCALL SetVimbaFrameRate(int argc, float argv[])
+{
+	double framerate;         // [hz]
+	//double framerate_current; // [hz]
+
+	framerate = (double)argv[0];
+
+	if (!Vhida::set_framerate(framerate)) return 0;
+
+	return 1;
+}
+
+
+
+/****************************************************************/
+/*  Preview functions
+/*
+/*  - before while loop, to start asynchronous capturing
+/*  IDL>  x=call_external(dll,'StartVimbaPreview')
+/*
+/*  - inside while loop, to get current image
+/*  IDL>  x=call_external(dll,'GetVimbaPreview',img)
+/*
+/*  - inside while loop, to close asynchronous capturing
+/*  IDL>  x=call_external(dll,'StopVimbaPreview')
+/****************************************************************/
+
+int IDL_STDCALL StartVimbaPreview(int argc, void* argv[])
+{
+	if (!Vhida::init_preview()) return 0;
+	return 1;
+}
+
+
+int IDL_STDCALL GetVimbaPreview(int argc, void* argv[])
+{
+	VmbUchar_t* idlBuffer = (VmbUchar_t *)argv[0];
+
+	Vhida::pPreviewHandler->copy_image(idlBuffer);
+
+	return 1;
+}
+
+int IDL_STDCALL StopVimbaPreview(int argc, void* argv[])
+{
+	if (!Vhida::close_preview()) return 0;
+	return 1;
+}
 
 
 
