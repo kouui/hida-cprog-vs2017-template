@@ -1,12 +1,9 @@
-; flirgui.pro
-@flirlib
+; vimbagui.pro
+@vimbalib
 
 ;**************************************************************
 function version
-  ver='0.1'   ; 2021/04/23 k.i.,u.k.    from orcagui 1.5  to flirgui
-  ver='0.2'   ; 2021/05/05 k.i.,u.k.    scanmap, trigmode, flirobs(temp_arr)
-  ver='0.3'   ; 2021/05/12 k.i.,u.k.    flir_rearmtrigger in setTriggerMode
-
+  ver='0.1'   ; 2021/12/21 u.k.    from flirgui  to vimbagui
   return,ver
 end
 
@@ -38,13 +35,13 @@ function wdevid, wd
 end
 
 ;**************************************************************
-pro flirgui_event, ev
+pro vimbagui_event, ev
   ;--------------------------------------------------------------
-  common flirgui, wd, wdp, evid_p, o, p, img1, imgs, tim, tem
+  common vimbagui, wd, wdp, evid_p, o, p, img1, imgs, tim, tem
   
   ; wd  - widget structure
   ; o - obs params
-  ; p - FLIR control parameters
+  ; p - VIMBA control parameters
 
   widget_control, ev.id, get_uvalue=value
   dbin=640./wdp.p.wx/p.bin
@@ -54,30 +51,29 @@ pro flirgui_event, ev
 
   if n_elements(wdid_p) eq 0 then evid_p=wdevid(wdp)
   ii=where(ev.id eq evid_p, count)
-  if count ne 0 then flir_handle, ev, wdp, p, img1
+  if count ne 0 then vimba_handle, ev, wdp, p, img1
 
 
   case (ev.id) of
     wd.NIMG: begin
       o.nimg=fix(gt_wdtxt(ev.id))
-      imgs=flirobs(nimg=o.nimg)
     end
     wd.SCANMAP: begin
       o.scanmap=widget_info(wd.SCANMAP,/button_set)
       if o.scanmap then begin
-	print,'click cut position'
-	cursor,x,y,/dev
-	if o.cut eq 0 then begin
-		draw,[0,p.Width/dbin],y*[1,1] 
-		o.pos=y
-		window,1,xs=p.Width/dbin,ys=o.nimg
-	endif else begin
-		draw,x*[1,1],[0,p.Height/dbin]
-		o.pos=x
-		window,1,xs=o.nimg,ys=p.Height/dbin
-	endelse
-	print,'pos=',o.pos
-        wset,0
+	      print,'click cut position'
+	      cursor,x,y,/dev
+	      if o.cut eq 0 then begin
+		      draw,[0,p.Width/dbin],y*[1,1] 
+		      o.pos=y
+		      window,1,xs=p.Width/dbin,ys=o.nimg
+	      endif else begin
+		      draw,x*[1,1],[0,p.Height/dbin]
+		      o.pos=x
+		      window,1,xs=o.nimg,ys=p.Height/dbin
+	      endelse
+	    print,'pos=',o.pos
+      wset,0
       endif
     end
     wd.CUT: begin
@@ -88,7 +84,7 @@ pro flirgui_event, ev
     end
     wd.SNAP: begin
       p.date_obs=get_systime(ctime=ctime)
-      img1=flirobs(nimg=1)
+      img1=vimba_obs(nimg=1) ;;TODO: should we acquire time_arr and frate_arr in SNAP?
       p.date_obs2=get_systime()
 
       img=rebin(img1,p.Width/dbin,p.Height/dbin)>0
@@ -105,28 +101,20 @@ pro flirgui_event, ev
       widget_control,wd.FILENAME,set_value=o.filename
     end
     wd.GET: begin
-      ;orca_idle    ;capture stop
-      ;orca_capturemode_snap,nimg=o.nimg
 
       if o.ExTrig then begin
-	flir_trigmode,'External'
-        flir_rearmtrigger
-	print,'External'
-        if o.polarity eq 0 then $
-          ;orca_settrigmode,'Start',polarity='Negative' $ ; for trigger test
-          flir_trigpolarity,'Negative' $
-        else $
-          ;orca_settrigmode,'Start',polarity='Positive' ; for trigger test
-          flir_trigpolarity,'Positive'
+        print, "Trigger functionality not yet implemented"
+	    ;;  flir_trigmode,'External'
+      ;;  flir_rearmtrigger
+	    ;;  print,'External'
+      ;;  if o.polarity eq 0 then flir_trigpolarity,'Negative' else flir_trigpolarity,'Positive'
       endif
 
       ;wait,1.  ;for safety finishing orca_capturemode_****,nimg=o.nimg (when nimg is large)
 
       p.date_obs=get_systime(ctime=ctime)
-      ;imgs=OrcaObs(nimg=o.nimg,sparse=p.sparse)
-      imgs=FlirObs(nimg=o.nimg,time_arr=tim,temp_arr=tem)
+      imgs=vimba_obs(nimg=o.nimg,time_arr=tim,frate_arr=fra)
       p.date_obs2=get_systime(ctime=ctime)
-      ;if o.ExTrig then orca_settrigmode,'Internal'
       img1=imgs[*,*,o.nimg-1]
       img=rebin(img1,p.Width/dbin,p.Height/dbin)>0
       dmin=wdp.p.min
@@ -138,20 +126,21 @@ pro flirgui_event, ev
       endif
       img=wdp.p.AUTOSCL_ON?bytscl(img):bytscl(img,min=dmin,max=dmax)
       tv,img,p.regionx/dbin,p.regiony/dbin
-        if o.scanmap then begin
-  	  wset,1
-	  if o.cut eq 0 then $		
-		tvscl,reform(rebin(imgs[*,o.pos,*],p.Width/dbin,1,o.nimg),p.Width/dbin,o.nimg) ; x-cut
- 	  if o.cut eq 1 then $
-		tvscl,transpose(reform(rebin(imgs[o.pos,*,*],1,p.Height/dbin,o.nimg),p.Height/dbin,o.nimg)) ; y-cut
-	  wset,0
-        endif
+      if o.scanmap then begin
+  	    wset,1
+	      if o.cut eq 0 then $		
+		      tvscl,reform(rebin(imgs[*,o.pos,*],p.Width/dbin,1,o.nimg),p.Width/dbin,o.nimg) ; x-cut
+ 	      if o.cut eq 1 then $
+		      tvscl,transpose(reform(rebin(imgs[o.pos,*,*],1,p.Height/dbin,o.nimg),p.Height/dbin,o.nimg)) ; y-cut
+	      wset,0
+      endif
       o.filename=o.fnam+ctime
       widget_control,wd.FILENAME,set_value=o.filename
-      p.temp = tem[0]
-      print, p.temp
-      widget_control,wdp.TEMP,set_value=string(p.temp,form='(f5.2)')
-      ;orca_idle    ;capture stop
+
+      ;; get temperature functionality not yet implemented
+      ;;p.temp = tem[0]
+      ;;print, p.temp
+      ;;widget_control,wdp.TEMP,set_value=string(p.temp,form='(f5.2)')
     end
     wd.PROFS: begin
       img1=imgs[*,*,0]
@@ -171,7 +160,7 @@ pro flirgui_event, ev
         img=wdp.p.AUTOSCL_ON?bytscl(img):bytscl(img,min=dmin,max=dmax)
         tv,img,p.regionx/dbin,p.regiony/dbin
         xyouts,10,10,string(i,form='(i4.0)'),/dev
-	imgss[*,*,i]=img
+	      imgss[*,*,i]=img
       endfor
       xmovie,imgss,/no_temp
     end
@@ -187,7 +176,9 @@ pro flirgui_event, ev
     end
     wd.SAVE: begin
       outfile=o.outdir+o.filename+'.fits'
-      savefits_p,imgs,p,file=outfile
+      ;;savefits_p,imgs,p,file=outfile
+      ;;cwritefits_p,imgs,p,file=outfile,dst_status=dstst,s4pos=s4pos, rotp=18000.0/q.m1.vm,/threading
+      cwritefits_p,imgs,p,file=outfile,/threading ;; need dst_status, time_arr, frate_arr
       print,'saved to '+outfile
     end
     wd.OBS_START: begin
@@ -200,19 +191,12 @@ pro flirgui_event, ev
       date_obs=get_systime(ctime=ctime,msec=msec)
 
       while ev.id ne wd.OBS_STOP do begin
-       if o.ExTrig then begin
-	   flir_trigmode,'External'
-	   flir_rearmtrigger
-	   ;flir_trigmode,'External'
-	   if o.polarity eq 0 then $
-	      ;orca_settrigmode,'Start',polarity='Negative' $ ; for trigger test for UTF?
-	      ;flir_settrigmode,2,1,0 $ ; sequence, external, Negative
-	      flir_trigpolarity,'Negative' $
-	    else $
-	      ;orca_settrigmode,'Start',polarity='Positive' ; 2017.05.01 T.A. for trigger produced by Glass scan
-	      ;flir_settrigmode,2,1,1 ; sequence, external, Positive
-	      flir_trigpolarity,'Positive'
-	    ;OrcaOutTriggerExposure                       ; 2017.05.01 T.A. for multi spectrometry
+        if o.ExTrig then begin
+          print, "Trigger functionality not yet implemented"
+	      ;;  flir_trigmode,'External'
+	      ;;  flir_rearmtrigger
+	      ;;  ;flir_trigmode,'External'
+	      ;;  if o.polarity eq 0 then flir_trigpolarity,'Negative' else flir_trigpolarity,'Positive'
         endif
         if lcount gt 0 then begin
           date_obs=get_systime(ctime=ctime,msec=msec)
@@ -222,7 +206,7 @@ pro flirgui_event, ev
           endwhile
         endif
         p.date_obs=date_obs
-        imgs=flirobs(nimg=o.nimg) ; ,sparse=p.sparse)
+        imgs=vimba_obs(nimg=o.nimg,time_arr=tim,frate_arr=fra)
         p.date_obs2=get_systime(ctime=ctime)
         img1=imgs[*,*,o.nimg-1]
         img=rebin(img1,p.Width/dbin,p.Height/dbin)>0
@@ -245,45 +229,37 @@ pro flirgui_event, ev
           xyouts,p.regionx/dbin,(p.regiony+p.Height)/dbin,/dev,'!C'+strjoin(['MIN ','MEAN','MAX ']+' '+string(mmm),'!C'),color=127
         endif
         if o.scanmap then begin
-  	  wset,1
-	  if o.cut eq 0 then $		
-		tvscl,reform(rebin(imgs[*,o.pos,*],p.Width/dbin,1,o.nimg),p.Width/dbin,o.nimg) ; x-cut
- 	  if o.cut eq 1 then $
-		tvscl,transpose(reform(rebin(imgs[o.pos,*,*],1,p.Height/dbin,o.nimg),p.Height/dbin,o.nimg)) ; y-cut
-	  wset,0
+  	      wset,1
+	        if o.cut eq 0 then $		
+		        tvscl,reform(rebin(imgs[*,o.pos,*],p.Width/dbin,1,o.nimg),p.Width/dbin,o.nimg) ; x-cut
+ 	        if o.cut eq 1 then $
+		        tvscl,transpose(reform(rebin(imgs[o.pos,*,*],1,p.Height/dbin,o.nimg),p.Height/dbin,o.nimg)) ; y-cut
+	        wset,0
         endif
 
         o.filename=o.fnam+ctime
         widget_control,wd.FILENAME,set_value=o.filename
         outfile=o.outdir+o.filename+'.fits'
         xyouts,x0+100,y0+p.Height/dbin-30,string(lcount,form='(i5)')+'  '+outfile,/dev
-        savefits_p,imgs,p,file=outfile
-	print,'-> ',outfile
+        ;savefits_p,imgs,p,file=outfile
+        ;;cwritefits_p,imgs,p,file=outfile,dst_status=dstst,s4pos=s4pos, rotp=18000.0/q.m1.vm,/threading
+        cwritefits_p,imgs,p,file=outfile,/threading ;; need dst_status, time_arr, frate_arr
+	      print,'-> ',outfile
         lcount=lcount+1
         msec0=msec
         ev = widget_event(wd.OBS_STOP,/nowait)
-        ;orca_idle    ;capture stop
-	if p.AutoNUC and (msec gt p.NUC_time + p.NUC_intval*60*1000) then begin
-	      NUC_tim = get_systime(ctime=ctime,msec=msec)
-	      wd_message,'  performing NUC '+ NUC_tim,base=b,xpos=350,ypos=400,title='FLIR'
-	      flir_performnuc
-	      print,'NUC performed! '+NUC_tim
-	      p.NUC_time = msec
-	      wd_message,destroy=b
-	endif
       endwhile
-      ;if o.ExTrig then orca_settrigmode,'Internal'
-      if o.ExTrig then flir_trigmode,'Internal'
+      ;;if o.ExTrig then flir_trigmode,'Internal'
       print,'Obs. stop'
     end
     wd.ExTrig: begin
       widget_control, ev.id, get_value=value
       o.extrig=value
       if o.extrig then begin
-	p.TrigMode='External' 
+        p.TrigMode='External' 
       endif else begin
-	p.TrigMode='Internal'
-	flir_trigmode,'Internal'
+	      p.TrigMode='Internal'
+	      vimba_trigmode,'Internal'
       endelse
       print,'ExTrigger=',o.extrig
     end
@@ -423,31 +399,30 @@ end
 ;************************************************************************
 ;  main
 ;--------------------------------------------------------------
-; pro orcagui
+; pro vimbagui
 ; .compile 'C:\Projects\IDLPRO\flir\flirgui.pro'
 ; resolve_all, skip_routines='YOH_IEEE2VAX'
 ; save,/routines,filename='C:\Projects\IDLPRO\flir\flirgui.sav'
 
-common flirgui, wd, wdp, evid_p, o, p, img1, imgs, tim, tem
-COMMON bridge,bridge
+common vimbagui, wd, wdp, evid_p, o, p, img1, imgs, tim, tem
+;;COMMON bridge,bridge
 ; wd  - obs widget structure
 ; wdp - camera widget structure
 ; o - obs control parameters
 ; p - camera control parameters
 
-p=FlirInit();/noDev)
-p=FlirSetParam(expo=0.015,bin=1)
+p=vimba_init(/noDev)
+p=vimba_setParam(expo=0.015)
 
 ;-----  prepare object array for parallel processing -----------
-nCPU=!CPU.HW_NCPU
-bridge=objarr(nCPU-1)
-;for i=0,nCPU-2 do bridge[i]=IDL_IDLbridge()
-for i=0,nCPU-2 do bridge[i]=obj_new('IDL_IDLBridge')
+;;nCPU=!CPU.HW_NCPU
+;;bridge=objarr(nCPU-1)
+;;for i=0,nCPU-2 do bridge[i]=obj_new('IDL_IDLBridge')
 
 ;settriggermode
 ;settriggerpolarity
 
-o={flir_obs_v01, $  ; obs. control params
+o={vimba_obs_v01, $  ; obs. control params
   nimg:     1,  $ ; # of image for 1 shot
   dt:       0., $ ; time step, sec
   scanmap:  0,  $ ; 1: display scan map, 0: not
@@ -457,7 +432,7 @@ o={flir_obs_v01, $  ; obs. control params
   polarity: 0,  $ ; 0: negative, 1: positive
   date:     '',   $
   outdir:   '',   $
-  fnam:     'flir', $
+  fnam:     'vimba', $
   filename: ''  $
 }
 
@@ -466,9 +441,9 @@ o.date=strmid(ctime,0,8)
 o.outdir='D:\data\'+o.date+'\'
 make_dir,o.outdir
 
-base = WIDGET_BASE(title='FLIR-GUI:  Ver.'+version(), /column)
+base = WIDGET_BASE(title='VIMBA-GUI:  Ver.'+version(), /column)
 
-wdp=flir_widget(base,p)
+wdp=vimba_widget(base,p)
 wd=obs_widget(base,o)
 
 
@@ -476,10 +451,10 @@ widget_control, base, /realize
 
 window,xs=wdp.p.wx,ys=wdp.p.wy
 
-XMANAGER, 'flirgui', base
+XMANAGER, 'vimbagui', base
 
-flirfin
+vimba_close
 
-for i=0,n_elements(bridge)-1 do obj_destroy,bridge[i]
+;;for i=0,n_elements(bridge)-1 do obj_destroy,bridge[i]
 
 end
