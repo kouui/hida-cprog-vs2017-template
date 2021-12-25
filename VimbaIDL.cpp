@@ -283,7 +283,7 @@ int close_camera()
 		INFO::error("flag_cam is flase before closing camera");
 		//return 0;
 	}
-	if (checkSuccess(pCamera->Close(), "close camera")) return 0;
+	if (!checkSuccess(pCamera->Close(), "close camera")) return 0;
 	flag_cam = false;
 	return 1;
 }
@@ -299,7 +299,7 @@ int close_sys()
 		INFO::error("flag_sys is flase before closing sys");
 		//return 0;
 	}
-	if (checkSuccess(sys.Shutdown(), "close sys")) return 0;
+	if (!checkSuccess(sys.Shutdown(), "close sys")) return 0;
 	flag_sys = false;
 
 	// release preview handler
@@ -313,8 +313,8 @@ int init_nPLS()
 	vimba::FeaturePtr pFeature;
 
 	//: Get the image size for the required buffer
-	if (checkSuccess(pCamera->GetFeatureByName("PayloadSize", pFeature),"get PayloadSize feature")) return 0;
-	if (checkSuccess(pFeature->GetValue(nPLS),"get PayloadSize")) return 0;
+	if (!checkSuccess(pCamera->GetFeatureByName("PayloadSize", pFeature),"get PayloadSize feature")) return 0;
+	if (!checkSuccess(pFeature->GetValue(nPLS),"get PayloadSize")) return 0;
 
 	//pPreviewHandler = new Preview::Handler(nPLS);
 	pPreviewHandler = std::make_shared<Preview::Handler>(nPLS);
@@ -426,7 +426,7 @@ int set_acquisition(const char * mode)
 
 	char message[100];
 	sprintf_s(message, "set acuisition mode %s", mode);
-	if (checkSuccess(pFeature->SetValue(mode), message)) return 0;
+	if (!checkSuccess(pFeature->SetValue(mode), message)) return 0;
 
 	return 1;
 }
@@ -598,14 +598,15 @@ int IDL_STDCALL VimbaInit(int argc, void* argv[])
 	if (!Vhida::init_nPLS()) return 0;
 	
 	//std::string xmlFile = "Z:\\conf\\Vimba\\demo.20211216.xml";
-	auto xmlFile = getIDLString(argv[0]);
+	std::string xmlFile = getIDLString(argv[0]);
 	if (!Vhida::load_configuration(xmlFile)) return 0;
-
+	
 	if (!Vhida::set_maximum_gev_packet()) return 0;
+	
 
-	char message[100];
-	sprintf_s(message, "Camera %s initialized", cameraID.c_str());
-	INFO::info(message);
+	//char message[100];
+	//sprintf_s(message, "Camera %s initialized", cameraID.c_str());
+	//INFO::info(message);
 	
 	return 1;
 }
