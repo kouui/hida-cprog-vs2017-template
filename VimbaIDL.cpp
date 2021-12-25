@@ -208,7 +208,7 @@ bool checkSuccess(VmbErrorType err, const char * text)
 {
 	if (err != VmbErrorSuccess) {
 
-		std::string fullText("Failed in :");
+		std::string fullText("Failed in : ");
 		fullText += std::string(text);
 
 		INFO::error(fullText.c_str());
@@ -356,12 +356,12 @@ int set_maximum_gev_packet()
 	return 1;
 }
 
-int set_exposure(const double value) // [microsecond]
+int set_exposure(const double value, const std::string featureWord) // [microsecond]
 {
 	if (!checkReady()) return 0;
 
 	vimba::FeaturePtr pFeature;
-	if (!checkSuccess(pCamera->GetFeatureByName("ExposureTime", pFeature), "get exposure time feature")) return 0;
+	if (!checkSuccess(pCamera->GetFeatureByName(featureWord.c_str(), pFeature), "get exposure time feature")) return 0;
 	
 	if (!checkSuccess(pFeature->SetValue(value), "set exposure time")) return 0;
 
@@ -375,24 +375,24 @@ int set_exposure(const double value) // [microsecond]
 	return 1;
 }
 
-int get_exposure(double & value)
+int get_exposure(double & value, const std::string featureWord)
 {
 	if (!checkReady()) return 0;
 
 	vimba::FeaturePtr pFeature;
-	if (!checkSuccess(pCamera->GetFeatureByName("ExposureTime", pFeature), "get exposure time feature")) return 0;
+	if (!checkSuccess(pCamera->GetFeatureByName(featureWord.c_str(), pFeature), "get exposure time feature")) return 0;
 	if (!checkSuccess(pFeature->GetValue(value), "get exposure")) return 0;
 
 	return 1;
 }
 
 // normally framerate is automatically set to 1/exposure, might deviate
-int set_framerate(const double value)
+int set_framerate(const double value, const std::string featureWord)
 {
 	if (!checkReady()) return 0;
 
 	vimba::FeaturePtr pFeature;
-	if (!checkSuccess(pCamera->GetFeatureByName("AcquisitionFrameRate", pFeature), "get framerate feature")) return 0;
+	if (!checkSuccess(pCamera->GetFeatureByName(featureWord.c_str(), pFeature), "get framerate feature")) return 0;
 	
 	if (!checkSuccess(pFeature->SetValue(value), "set framerate")) return 0;
 
@@ -406,12 +406,12 @@ int set_framerate(const double value)
 	return 1;
 }
 
-int get_framerate(double & value)
+int get_framerate(double & value, const std::string featureWord)
 {
 	if (!checkReady()) return 0;
 
 	vimba::FeaturePtr pFeature;
-	if (!checkSuccess(pCamera->GetFeatureByName("AcquisitionFrameRate", pFeature), "get framerate feature")) return 0;
+	if (!checkSuccess(pCamera->GetFeatureByName(featureWord.c_str(), pFeature), "get framerate feature")) return 0;
 	if (!checkSuccess(pFeature->GetValue(value), "get framerate")) return 0;
 
 	return 1;
@@ -626,34 +626,41 @@ int IDL_STDCALL VimbaClose(int argc, void* argv[])
 
 /****************************************************************/
 /*  set camera exposure
-/*  IDL>  x=call_external(dll,'SetVimbaExpoTime',50.,/all_value,/cdecl)
+/*  IDL>  x=call_external(dll,'SetVimbaExpoTime',[50.],"ExposureTime")
 /****************************************************************/
 
-int IDL_STDCALL SetVimbaExpoTime(int argc, float argv[])
+int IDL_STDCALL SetVimbaExpoTime(int argc, void* argv[])
 {
 	double expotime;         // [miliseconds]
 	//double expotime_current; // [miliseconds]
 
-	expotime = (double)argv[0];
+	// expotime = (double)argv[0];
+	float* expo_arr = (float*)argv[0];
+	expotime = (double) expo_arr[0];
 
-	if (!Vhida::set_exposure(expotime*1000.)) return 0;
+	std::string featureWord = getIDLString(argv[1]);
+
+	if (!Vhida::set_exposure(expotime*1000., featureWord)) return 0;
 
 	return 1;
 }
 
 /****************************************************************/
 /*  set camera framerate
-/*  IDL>  x=call_external(dll,'SetVimbaFrameRate', 20.,/all_value,/cdecl)
+/*  IDL>  x=call_external(dll,'SetVimbaFrameRate', [20.],"AcquisitionFrameRate")
 /****************************************************************/
 
-int IDL_STDCALL SetVimbaFrameRate(int argc, float argv[])
+int IDL_STDCALL SetVimbaFrameRate(int argc, void* argv[])
 {
 	double framerate;         // [hz]
 	//double framerate_current; // [hz]
 
-	framerate = (double)argv[0];
+	float* framerate_arr = (float*)argv[0];
+	framerate = (double)framerate_arr[0];
 
-	if (!Vhida::set_framerate(framerate)) return 0;
+	std::string featureWord = getIDLString(argv[1]);
+
+	if (!Vhida::set_framerate(framerate, featureWord)) return 0;
 
 	return 1;
 }
@@ -697,7 +704,7 @@ int IDL_STDCALL StopVimbaPreview(int argc, void* argv[])
 
 /****************************************************************/
 /*  camera grab image sequence (synchronously) with header
-/*  IDL>  x=call_external(dll,'VimbaObs', nimg, imgs, times, framerate)
+/*  IDL>  x=call_external(dll,'VimbaObs', nimg, imgs, times, framerate, "AqcuisitionFrameRate")
 /****************************************************************/
 
 
@@ -709,6 +716,8 @@ int IDL_STDCALL VimbaObs(int argc, void* argv[])
 	UINT16* idlBuffer_time = (UINT16*)argv[2];         // idl buffer for timestamp 2d array
 	float*  idlBuffer_framerate = (float *)argv[3];    // idl buffer for framerate 1d array
 
+	std::string featureWord = getIDLString(argv[4]);
+
 	//: acquire image
 	Vhida::vimba::FramePtrVector pFrames(nFrame);
 	if (!Vhida::grab_multiframe(pFrames)) return 0;
@@ -717,7 +726,7 @@ int IDL_STDCALL VimbaObs(int argc, void* argv[])
 
 	// get framerate
 	double frate;
-	Vhida::get_framerate(frate);
+	Vhida::get_framerate(frate, featureWord);
 
 	int nTimeParam = 6;
 	//: copy memory data

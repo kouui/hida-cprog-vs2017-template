@@ -3,6 +3,31 @@
 ; 2021.12.21  u.k.
 
 ;**************************************************************
+function struct_feature, camera_type
+
+  case camera_type of
+      'prosilica' : begin
+		    ;ret = call_external(vimbadll,"Hello")
+        struct={vimba_feature_words,   $
+                exposure:  "ExposureTimeAbs",      $
+                framerate: "AcquisitionFrameRateAbs"  $
+        }
+        print, 'Vimba with ', camera_type, " camera"
+		  end
+      'goldeye' : begin
+        struct={vimba_feature_words,   $
+                exposure:  "ExposureTime",      $
+                framerate: "AcquisitionFrameRate"  $
+        }
+        print, 'Vimba with ', camera_type, " camera"
+		  end
+      else : throw_error, "undefined camera_type="+camera_type
+    endcase
+  
+  return,struct
+end
+
+;**************************************************************
 function p_vimba
 
   p={vimba_param,   $
@@ -41,9 +66,11 @@ function p_vimba
 end
 
 ;**************************************************************
-function vimba_init,noDev=noDev0
+function vimba_init,camera_type,noDev=noDev0
 
-  common vimba,vimbadll,p,img,noDev,imgs,imgss
+  common vimba,vimbadll,p,img,noDev,imgs,imgss,features
+  
+  features=struct_feature(camera_type)
 
   flirdll='Z:\Projects\cprog\VS2017\VimbaIDL\x64\Debug\VimbaIDL.dll'
   if keyword_set(noDev0) then noDev=1 else noDev=0
@@ -74,7 +101,7 @@ function vimba_setParam,expo=expo,gain=gain,bin=bin, $
   width=width,height=height,regionx=regionx,regiony=regiony, $
   framerate=framerate
 
-  common vimba,vimbadll,p,img,noDev,imgs,imgss
+  common vimba,vimbadll,p,img,noDev,imgs,imgss,features
  ; print, p.TrigMode, " FlirSetParam"
   ;  expo      - exposure, sec, float
   ;  width, height, regionx,y, bin, gain, framerate  (not implemented)
@@ -86,7 +113,7 @@ function vimba_setParam,expo=expo,gain=gain,bin=bin, $
   endif else revexpo = 0b
   if revexpo then begin
     expo_mili = expo * 1000.0
-    if not noDev then ret = call_external(vimbadll, 'SetVimbaExpoTime', expo_mili, /all_value, /cdecl)
+    if not noDev then ret = call_external(vimbadll, 'SetVimbaExpoTime', [expo_mili], features.exposure)
     p.expo = expo
   endif
 
@@ -97,7 +124,7 @@ function vimba_setParam,expo=expo,gain=gain,bin=bin, $
   endif else revfrate = 0b
   if revfrate then begin
     frate = float(framerate)
-    if not noDev then ret = call_external(flirdll, 'SetVimbaFrameRate', frate, /all_value, /cdecl)
+    if not noDev then ret = call_external(flirdll, 'SetVimbaFrameRate', [frate,], features.framerate)
     p.framerate = frate
   endif
 
