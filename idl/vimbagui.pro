@@ -182,7 +182,7 @@ pro vimbagui_event, ev
       print,'saved to '+outfile
     end
     wd.OBS_START: begin
-      nbins=128 & imax=2l^14 -1
+      nbins=128 & imax=2l^16 -1
       ii=findgen(nbins)/nbins*imax
       lcount=0l
 
@@ -294,8 +294,8 @@ pro vimbagui_event, ev
       bin=fits_keyval(fh,'BIN',/fix)
       Width=nx
       Height=ny
-      p=FlirSetParam(bin=bin)
-      p=FlirSetParam(regionx=RegionX,regiony=RegionY,width=Width,height=Height)
+      p=vimba_setParam(bin=bin)
+      p=vimba_setParam(regionx=RegionX,regiony=RegionY,width=Width,height=Height)
       set_wdroi,wdp,p
       widget_control,wdp.BIN,set_value=string(p.bin,form='(i2)')
       widget_control,wd.NIMG,set_value=string(o.nimg,form='(i4)')
@@ -411,7 +411,8 @@ common vimbagui, wd, wdp, evid_p, o, p, img1, imgs, tim, tem
 ; o - obs control parameters
 ; p - camera control parameters
 
-p=vimba_init(/noDev)
+xmlFile="Z:\\conf\\Vimba\\prosilica.000F3101ABD0.20211225.xml"
+p=vimba_init("prosilica",xmlFile);,/noDev)
 p=vimba_setParam(expo=0.015)
 
 ;-----  prepare object array for parallel processing -----------

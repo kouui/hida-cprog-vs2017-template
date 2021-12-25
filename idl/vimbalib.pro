@@ -27,6 +27,26 @@ function struct_feature, camera_type
   return,struct
 end
 
+function init_camera_size, p1, camera_type
+
+  case camera_type of
+      'prosilica' : begin
+		    ;ret = call_external(vimbadll,"Hello")
+        p1.width =1600l
+        p1.height=1200l
+		  end
+      'goldeye' : begin
+        p1.width =640l
+        p1.height=512l
+		  end
+      else : throw_error, "undefined camera_type="+camera_type
+    endcase
+  
+  return,p1
+end
+
+
+
 ;**************************************************************
 function p_vimba
 
@@ -66,18 +86,20 @@ function p_vimba
 end
 
 ;**************************************************************
-function vimba_init,camera_type,noDev=noDev0
+function vimba_init,camera_type,xmlFile,noDev=noDev0
 
   common vimba,vimbadll,p,img,noDev,imgs,imgss,features
   
   features=struct_feature(camera_type)
 
-  flirdll='Z:\Projects\cprog\VS2017\VimbaIDL\x64\Debug\VimbaIDL.dll'
+  vimbadll='Z:\Projects\cprog\VS2017\VimbaIDL\x64\Debug\VimbaIDL.dll'
   if keyword_set(noDev0) then noDev=1 else noDev=0
-  if not noDev then err=call_external(vimbadll,'VimbaInit',/all_value,/cdecl)
+  if not noDev then err=call_external(vimbadll,'VimbaInit',xmlFile)
 
-  p=p_flir()
+  p=p_vimba()
+  p=init_camera_size(p, camera_type)
   img=uintarr(p.width,p.height)
+  print, size(img)
 
   imgss=[0l,0l,0l] ;; size of imgs
 
@@ -124,7 +146,7 @@ function vimba_setParam,expo=expo,gain=gain,bin=bin, $
   endif else revfrate = 0b
   if revfrate then begin
     frate = float(framerate)
-    if not noDev then ret = call_external(flirdll, 'SetVimbaFrameRate', [frate,], features.framerate)
+    if not noDev then ret = call_external(vimbadll, 'SetVimbaFrameRate', [frate], features.framerate)
     p.framerate = frate
   endif
 
@@ -135,7 +157,7 @@ function vimba_setParam,expo=expo,gain=gain,bin=bin, $
  ;    revgain = 1b
  ;  endif else revgain = 0b
  ;  if revgain then begin
- ;    if not noDev then ret = call_external(flirdll, 'SetFPAGain', gain, /all_value, /cdecl)
+ ;    if not noDev then ret = call_external(vimbadll, 'SetFPAGain', gain, /all_value, /cdecl)
  ;  endif
 
   return, p
@@ -186,7 +208,7 @@ end
 ;**************************************************************
 function vimba_obs, nimg=nimg, time_arr=time_arr, frate_arr=frate_arr
 
-  common vimba,vimbadll,p,img,noDev,imgs,imgss
+  common vimba,vimbadll,p,img,noDev,imgs,imgss,features
 
   if not keyword_set(nimg) then nimg = 1
   if nimg eq 0 then nimg = 1
@@ -196,7 +218,7 @@ function vimba_obs, nimg=nimg, time_arr=time_arr, frate_arr=frate_arr
 
   imgs=uintarr(p.width,p.height,nimg)
   if not noDev then begin
-    ret = call_external(vimbadll, 'VimbaObs', nimg, imgs, time_arr, frate_arr)
+    ret = call_external(vimbadll, 'VimbaObs', nimg, imgs, time_arr, frate_arr,features)
   endif
   imgss = [p.width,p.height,nimg]
 
@@ -251,8 +273,8 @@ pro vimba_trigpolarity,polarity
   
   if not noDev then begin
     case polarity of
-      'Negative': print, 'trigger polarity functionallity not yet implemented'  ;r=call_external(flirdll,"SetTriggerPolarity",0)
-      'Positive': print, 'trigger polarity functionallity not yet implemented'  ;r=call_external(flirdll,"SetTriggerPolarity",1)
+      'Negative': print, 'trigger polarity functionallity not yet implemented'  ;r=call_external(vimbadll,"SetTriggerPolarity",0)
+      'Positive': print, 'trigger polarity functionallity not yet implemented'  ;r=call_external(vimbadll,"SetTriggerPolarity",1)
       else:   print,'trigger polarity',polarity,' not defined!'
     endcase
   endif
@@ -318,7 +340,7 @@ pro vimba_handle, ev, wd, p0, img1
   case (ev.id) of
     wd.PRV_START: begin
       
-      nbins=128 & imax=2l^14 -1
+      nbins=128 & imax=2l^16 -1
       ii=findgen(nbins)/nbins*imax
       x0=p.regionx/dbin
       y0=p.regiony/dbin
@@ -335,20 +357,22 @@ pro vimba_handle, ev, wd, p0, img1
       while ev.id ne wd.PRV_STOP do begin
         ;img1=orca_getimg(nimg=1) ;,/nowait)
         ;img1=flir_getimg(nimg=1)
+        
         img1=vimba_snap()
+        ;continue
 
-        img=rebin(img1,p.Width/dbin,p.Height/dbin)>0
+        img2=rebin(img1,p.Width/dbin,p.Height/dbin)>0
         dmin=wd.p.min
         dmax=wd.p.max
         if wd.p.log_on then begin
-          img=alog10(img>1)
+          img2=alog10(img2>1)
           dmin=alog10(dmin>1)
           dmax=alog10(dmax>1)
         endif
-        img=wd.p.AUTOSCL_ON?bytscl(img):bytscl(img,min=dmin,max=dmax)
+        img2=wd.p.AUTOSCL_ON?bytscl(img2):bytscl(img2,min=dmin,max=dmax)
 
         set_plot,'z'
-        tv,img
+        tv,img2
         if wd.p.hist_on then begin
           h=histogram(img1,max=imax,min=0,nbins=nbins)
           plot,ii,h,psym=10, $
@@ -508,25 +532,25 @@ function vimba_widget,base,p
   wd.PRV_START=widget_button(b21, value="Start", uvalue = "PRV_START")
   wd.PRV_STOP=widget_button(b21, value="Stop", uvalue = "PRV_STOP")
 
-  b21b=widget_base(b2, /row)
-  wd.NUC=widget_button(b21b, value="NUC", uvalue = "NUC")
-  dmy = widget_label(b21b, value=' Auto:')
-  b21bb=widget_base(b21b, /row,/ nonex)
-  wd.AutoNUC= widget_button(b21bb,value='')
-  widget_control,wd.AutoNUC,set_button=p.AutoNUC
-  dmy = widget_label(b21b, value='Intval:')
-  wd.NUC_INTVAL = widget_text(b21b,value=string(p.NUC_intval,form='(f5.1)'), xsize=5, uvalue='NUC_INTVAL',/edit)
-  dmy = widget_label(b21b, value='min')
+  ;;b21b=widget_base(b2, /row)
+  ;;wd.NUC=widget_button(b21b, value="NUC", uvalue = "NUC")
+  ;;dmy = widget_label(b21b, value=' Auto:')
+  ;;b21bb=widget_base(b21b, /row,/ nonex)
+  ;;wd.AutoNUC= widget_button(b21bb,value='')
+  ;;widget_control,wd.AutoNUC,set_button=p.AutoNUC
+  ;;dmy = widget_label(b21b, value='Intval:')
+  ;;wd.NUC_INTVAL = widget_text(b21b,value=string(p.NUC_intval,form='(f5.1)'), xsize=5, uvalue='NUC_INTVAL',/edit)
+  ;;dmy = widget_label(b21b, value='min')
 
-  b21c=widget_base(b2, /row)
-  dmy = widget_label(b21c, value='Gain: ')
-  wd.GAIN = cw_bgroup(b21c,['L','M','H'],/row, $
-    uvalue="GAIN",/no_release,set_value=p.gain,/exclusive,ysize=25,/frame)
-  b21d=widget_base(b2, /row)
-  dmy = widget_label(b21d, value='Temp: ')
+  ;;b21c=widget_base(b2, /row)
+  ;;dmy = widget_label(b21c, value='Gain: ')
+  ;;wd.GAIN = cw_bgroup(b21c,['L','M','H'],/row, $
+  ;;  uvalue="GAIN",/no_release,set_value=p.gain,/exclusive,ysize=25,/frame)
+  ;;b21d=widget_base(b2, /row)
+  ;;dmy = widget_label(b21d, value='Temp: ')
   ;p.Temp = flir_getFPACurrentTemperature()
-  wd.TEMP = widget_text(b21d,value=string(p.Temp,form='(f5.1)'), xsize=5, uvalue='Temp');,/edit)
-  dmy = widget_label(b21d, value='C')
+  ;;wd.TEMP = widget_text(b21d,value=string(p.Temp,form='(f5.1)'), xsize=5, uvalue='Temp');,/edit)
+  ;;dmy = widget_label(b21d, value='C')
 
   b22=widget_base(b2, /row)
   dmy = widget_label(b22, value='ROI: ')
