@@ -68,6 +68,14 @@ namespace Vhida
 
 namespace vimba = AVT::VmbAPI;
 
+//: get a reference to the vimba system api
+vimba::VimbaSystem& sys = vimba::VimbaSystem::GetInstance();
+std::atomic<bool> flag_sys = false;
+
+//: camera pointer
+vimba::CameraPtr pCamera;
+std::atomic<bool> flag_cam = false;
+
 
 bool checkSuccess(VmbErrorType err, const char * text)
 {
@@ -204,6 +212,11 @@ public:
 }
 
 
+//: preview handler 
+//std::auto_ptr<Preview::Handler> pPreviewHandler;
+std::shared_ptr<Preview::Handler> pPreviewHandler;
+//Preview::Handler* pPreviewHandler;
+
 namespace Observation
 {
 
@@ -222,10 +235,12 @@ public:
 		//: might do some process here
 		//INFO::info("frame acquired");
 
+
 		//: during observation, we mainly perform multi-frame sequential capturing -> synchronous
 		//: don't send pFrame back to queue to recieve next frame buffer
 		//m_pCamera->QueueFrame(pFrame);
 	}
+
 };
 
 }
@@ -236,19 +251,6 @@ public:
 /*  
 /****************************************************************/
 
-
-//: get a reference to the vimba system api
-vimba::VimbaSystem& sys = vimba::VimbaSystem::GetInstance();
-std::atomic<bool> flag_sys = false;
-
-//: camera pointer
-vimba::CameraPtr pCamera = vimba::CameraPtr();
-std::atomic<bool> flag_cam = false;
-
-//: preview handler 
-//std::auto_ptr<Preview::Handler> pPreviewHandler;
-std::shared_ptr<Preview::Handler> pPreviewHandler;
-//Preview::Handler* pPreviewHandler;
 
 //: payload size value
 //VmbInt64_t nPLS;
@@ -757,16 +759,17 @@ int IDL_STDCALL VimbaObs(int argc, void* argv[])
 	//char message[100];
 	//sprintf_s(message, "nFrame=%u", nFrame);
 	//INFO::info(message);
-
+	
 	UINT16* idlBuffer = (UINT16*)argv[1];              // idl buffer for 3d image array
 	UINT16* idlBuffer_time = (UINT16*)argv[2];         // idl buffer for timestamp 2d array
 	float*  idlBuffer_framerate = (float *)argv[3];    // idl buffer for framerate 1d array
 
 	std::string featureWord = getIDLString(argv[4]);
-
+	
 	//: acquire image
 	Vhida::vimba::FramePtrVector pFrames(nFrame);
 	//if (!Vhida::grab_multiframe(pFrames)) return 0;
+	//return 1;
 	Vhida::pCamera->AcquireMultipleImages(pFrames,Vhida::Observation::TIMEOUT);
 
 	
