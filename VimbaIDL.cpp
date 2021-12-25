@@ -68,6 +68,7 @@ namespace Vhida
 
 namespace vimba = AVT::VmbAPI;
 
+
 bool checkSuccess(VmbErrorType err, const char * text)
 {
 	if (err != VmbErrorSuccess) {
@@ -85,10 +86,12 @@ bool checkSuccess(VmbErrorType err, const char * text)
 namespace Preview 
 {
 
+VmbUint32_t TIMEOUT = 10 * 1000;
+
 VmbUint32_t get_image_size(const vimba::CameraPtr tmp_pcamera)
 {
 	vimba::FramePtr pframe;
-	tmp_pcamera->AcquireSingleImage(pframe, 60*1000);
+	tmp_pcamera->AcquireSingleImage(pframe, TIMEOUT);
 	VmbUint32_t image_size;
 	pframe->GetImageSize(image_size);
 
@@ -203,6 +206,8 @@ public:
 
 namespace Observation
 {
+
+VmbUint32_t TIMEOUT = 20 * 1000;
 
 /****************************************************************/
 /*  frameobserver for observation
@@ -630,7 +635,7 @@ int IDL_STDCALL VimbaInit(int argc, void* argv[])
 	
 	//std::string xmlFile = "Z:\\conf\\Vimba\\demo.20211216.xml";
 	std::string xmlFile = getIDLString(argv[0]);
-	//if (!Vhida::load_configuration(xmlFile)) return 0;
+	if (!Vhida::load_configuration(xmlFile)) return 0;
 	
 	if (!Vhida::set_maximum_gev_packet()) return 0;
 
@@ -749,9 +754,9 @@ int IDL_STDCALL VimbaObs(int argc, void* argv[])
 	//Vhida::init_camera(cid);
 
 	UINT16 nFrame = (UINT16) *((UINT16*)argv[0]);
-	char message[100];
-	sprintf_s(message, "nFrame=%u", nFrame);
-	INFO::info(message);
+	//char message[100];
+	//sprintf_s(message, "nFrame=%u", nFrame);
+	//INFO::info(message);
 
 	UINT16* idlBuffer = (UINT16*)argv[1];              // idl buffer for 3d image array
 	UINT16* idlBuffer_time = (UINT16*)argv[2];         // idl buffer for timestamp 2d array
@@ -761,8 +766,8 @@ int IDL_STDCALL VimbaObs(int argc, void* argv[])
 
 	//: acquire image
 	Vhida::vimba::FramePtrVector pFrames(nFrame);
-	if (!Vhida::grab_multiframe(pFrames)) return 0;
-	//Vhida::pCamera->AcquireMultipleImages(pFrames, 5000);
+	//if (!Vhida::grab_multiframe(pFrames)) return 0;
+	Vhida::pCamera->AcquireMultipleImages(pFrames,Vhida::Observation::TIMEOUT);
 
 	
 	VmbUint32_t imageSize;
@@ -811,4 +816,29 @@ int IDL_STDCALL VimbaObs(int argc, void* argv[])
 }
 
 
+/****************************************************************/
+/*  camera grab image sequence (synchronously) with header
+/*  IDL>  x=call_external(dll,'VimbaSnap', img)
+/****************************************************************/
+
+
+int IDL_STDCALL VimbaSnap(int argc, void* argv[])
+{
+	UINT16* idlBuffer = (UINT16*)argv[0];              // idl buffer for 2d image array
+
+	Vhida::vimba::FramePtr pframe;
+	Vhida::pCamera->AcquireSingleImage(pframe, Vhida::Observation::TIMEOUT);
+
+	VmbUint32_t imageSize;
+	pframe->GetImageSize(imageSize);
+
+	VmbUchar_t* pimage;
+	pframe->GetImage(pimage);
+
+	// copy image memory
+	memcpy((void*)(idlBuffer), (void*)(pimage), imageSize);
+
+	return 1;
+	
+}
 

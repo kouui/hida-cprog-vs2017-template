@@ -142,6 +142,7 @@ function vimba_setParam,expo=expo,gain=gain,bin=bin, $
 end
 
 ;**************************************************************
+;[no use]
 pro vimba_startPreview
 
   common vimba,vimbadll,p,img,noDev,imgs,imgss
@@ -150,6 +151,7 @@ pro vimba_startPreview
 end
 
 ;**************************************************************
+;[no use]
 pro vimba_stopPreview
 
   common vimba,vimbadll,p,img,noDev,imgs,imgss
@@ -158,11 +160,24 @@ pro vimba_stopPreview
 end
 
 ;**************************************************************
+;[no use]
 function vimba_getPreview
 
   common vimba,vimbadll,p,img,noDev,imgs,imgss
   if not noDev then begin
     ret = call_external(vimbadll, 'GetVimbaPreview', img)
+  endif
+  
+  return, img
+end
+
+;**************************************************************
+;
+function vimba_snap
+
+  common vimba,vimbadll,p,img,noDev,imgs,imgss
+  if not noDev then begin
+    ret = call_external(vimbadll, 'VimbaSnap', img)
   endif
   
   return, img
@@ -311,7 +326,7 @@ pro vimba_handle, ev, wd, p0, img1
       ;flir_trigmode,'Internal'
 
       ;continuous capturing start
-      vimba_startPreview
+      ;;vimba_startPreview
 
       set_plot,'z'
       device,set_resolution=[p.Width,p.Height]/dbin
@@ -320,7 +335,7 @@ pro vimba_handle, ev, wd, p0, img1
       while ev.id ne wd.PRV_STOP do begin
         ;img1=orca_getimg(nimg=1) ;,/nowait)
         ;img1=flir_getimg(nimg=1)
-        img1=vimba_getPreview()
+        img1=vimba_snap()
 
         img=rebin(img1,p.Width/dbin,p.Height/dbin)>0
         dmin=wd.p.min
@@ -350,7 +365,7 @@ pro vimba_handle, ev, wd, p0, img1
         ev = widget_event(wd.PRV_STOP,/nowait)
       endwhile
 
-      vimba_stopPreview    ;capture stop
+      ;;vimba_stopPreview    ;capture stop
 
     end
     wd.EXPO: begin

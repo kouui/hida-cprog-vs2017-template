@@ -11,3 +11,4 @@ EXPORTS
 	GetVimbaPreview
 	StopVimbaPreview
 	VimbaObs
+	VimbaSnap
