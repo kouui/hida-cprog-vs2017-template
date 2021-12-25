@@ -73,6 +73,9 @@ namespace Preview
 {
 
 //: handler to store the current frame during preview
+
+bool isHandleAllocated = false;
+
 class Handler
 {
 public:
@@ -119,7 +122,6 @@ public:
 
 		isBusy.store(false);
 	}
-
 
 	std::atomic<bool> isBusy=false;
 	VmbUint32_t imageSize;
@@ -267,6 +269,10 @@ int init_camera(std::string & cameraID)
 			return 0;
 	}
 
+	char message[100];
+	sprintf_s(message, "Camera %s", cameraID.c_str());
+	INFO::info(message);
+
 	flag_cam = true;
 	return 1;
 }
@@ -312,6 +318,7 @@ int init_nPLS()
 
 	//pPreviewHandler = new Preview::Handler(nPLS);
 	pPreviewHandler = std::make_shared<Preview::Handler>(nPLS);
+	Preview::isHandleAllocated = true;
 
 	return 1;
 }
@@ -568,9 +575,17 @@ STime timestamp_to_STime(const VmbUint64_t timestamp)
 
 }
 
+std::string getIDLString(const void* argv)
+{
+	IDL_STRING* s_ptr = (IDL_STRING *)argv;
+	std::string str(s_ptr[0].s, s_ptr[0].s + s_ptr[0].slen);
+	
+	return std::move(str);
+}
+
 /****************************************************************/
 /*  camera connection
-/*  IDL>  x=call_external(dll,'VimbaInit')
+/*  IDL>  x=call_external(dll,'VimbaInit', "Z:\\conf\\Vimba\\demo.20211216.xml")
 /****************************************************************/
 
 int IDL_STDCALL VimbaInit(int argc, void* argv[])
@@ -582,7 +597,8 @@ int IDL_STDCALL VimbaInit(int argc, void* argv[])
 	
 	if (!Vhida::init_nPLS()) return 0;
 	
-	std::string xmlFile = "Z:\\conf\\Vimba\\demo.20211216.xml";
+	//std::string xmlFile = "Z:\\conf\\Vimba\\demo.20211216.xml";
+	auto xmlFile = getIDLString(argv[0]);
 	if (!Vhida::load_configuration(xmlFile)) return 0;
 
 	if (!Vhida::set_maximum_gev_packet()) return 0;
@@ -610,7 +626,7 @@ int IDL_STDCALL VimbaClose(int argc, void* argv[])
 
 /****************************************************************/
 /*  set camera exposure
-/*  IDL>  x=call_external(dir+'FlirIDL.dll','SetFlirExpo',50.,/all_value,/cdecl)
+/*  IDL>  x=call_external(dll,'SetVimbaExpoTime',50.,/all_value,/cdecl)
 /****************************************************************/
 
 int IDL_STDCALL SetVimbaExpoTime(int argc, float argv[])
