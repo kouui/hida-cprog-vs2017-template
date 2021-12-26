@@ -500,6 +500,47 @@ int set_roi(const INT32 offsetx, const INT32 offsety, const INT32 width, const I
 	return 1;
 }
 
+//int set_bin(const INT16 binx, const INT16 biny, const INT32 widthMax, const INT32 heightMax)
+int set_bin(const INT16 binx, const INT16 biny)
+{
+	if (!checkReady()) return 0;
+
+	vimba::FeaturePtr pFeature;
+	INT64 currentx, currenty;
+
+	if (!checkSuccess(pCamera->GetFeatureByName("BinningHorizontal", pFeature), "get BinningHorizontal feature")) return 0;
+	pFeature->GetValue(currentx);
+	if (currentx != (INT64)binx)
+		if (!checkSuccess(pFeature->SetValue(binx), "set BinningHorizontal")) return 0;
+
+	if (!checkSuccess(pCamera->GetFeatureByName("BinningVertical", pFeature), "get BinningVertical feature")) return 0;
+	pFeature->GetValue(currenty);
+	if (currenty != (INT64)biny)
+		if (!checkSuccess(pFeature->SetValue(biny), "set BinningVertical")) return 0;
+
+	//if ((currentx < (INT64)binx) || (currenty < (INT64)biny)) {
+	//	set_roi(0, 0, widthMax/binx, heightMax/biny);
+	//}
+
+	if (false) {// get current image format
+		INT64 offsetx, offsety, width, height;
+		pCamera->GetFeatureByName("OffsetX", pFeature);
+		pFeature->GetValue(offsetx);
+		pCamera->GetFeatureByName("OffsetY", pFeature);
+		pFeature->GetValue(offsety);
+		pCamera->GetFeatureByName("Width", pFeature);
+		pFeature->GetValue(width);
+		pCamera->GetFeatureByName("Height", pFeature);
+		pFeature->GetValue(height);
+
+		char message[100];
+		sprintf_s(message, "offsetX=%lld, offsetY=%lld, width=%lld, height=%lld", offsetx, offsety, width, height);
+		INFO::info(message);
+	}
+
+	return 1;
+}
+
 
 
 int grab_multiframe(vimba::FramePtrVector & pFrames)
@@ -914,13 +955,43 @@ int IDL_STDCALL VimbaRoi(int argc, void* argv[])
 	idl_int_t width   = *((idl_int_t*)argv[2]);
 	idl_int_t height  = *((idl_int_t*)argv[3]);
 
-	//char message[100];
-	//sprintf_s(message, "regionX=%d, regionY=%d, width=%d, height=%d", regionX, regionY, width, height);
-	//INFO::info(message);
+	if (false) {
+		char message[100];
+		sprintf_s(message, "regionX=%d, regionY=%d, width=%d, height=%d", regionX, regionY, width, height);
+		INFO::info(message);
+	}
+	
 
 	if (!set_roi(regionX, regionY, width, height))
 	{
 		INFO::error("failed to set roi in vimba");
+		return 0;
+	}
+
+	if (!init_preview_handler())
+	{
+		INFO::error("failed to re-init preview handler");
+		return 0;
+	}
+
+	return 1;
+}
+
+/****************************************************************/
+/*  subregion
+/*  IDL>  x=call_external(dll,'VimbaBin', binx, biny)
+/****************************************************************/
+
+int IDL_STDCALL VimbaBin(int argc, void* argv[])
+{
+	using idl_int_t = INT16;
+
+	idl_int_t binx = *((idl_int_t*)argv[0]);
+	idl_int_t biny = *((idl_int_t*)argv[1]);
+
+	if (!set_bin(binx, biny))
+	{
+		INFO::error("failed to change binnding in vimba");
 		return 0;
 	}
 
