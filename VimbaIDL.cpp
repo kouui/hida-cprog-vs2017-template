@@ -157,12 +157,11 @@ public:
 	{
 		//: allocate buffer according to nPLS
 
-		//char message[100];
-
 		VmbInt64_t my_nPLS = get_nPLS(tmp_pcamera);
 
-		//sprintf_s(message, "nPLS=%lld", my_nPLS);
-		//INFO::info(message);
+		char message[100];
+		sprintf_s(message, "image size = %lld [byte]", my_nPLS);
+		INFO::info(message);
 
 		imageSize = get_image_size(tmp_pcamera);
 
@@ -469,6 +468,39 @@ int set_acquisition(const char * mode)
 
 	return 1;
 }
+
+int set_roi(const INT32 offsetx, const INT32 offsety, const INT32 width, const INT32 height)
+{
+	if (!checkReady()) return 0;
+
+	vimba::FeaturePtr pFeature;
+
+	INT64 current;
+
+	if (!checkSuccess(pCamera->GetFeatureByName("OffsetX", pFeature), "get OffsetX feature")) return 0;
+	pFeature->GetValue(current);
+	if (current != (INT64)offsetx)
+		if (!checkSuccess(pFeature->SetValue(offsetx), "set OffsetX")) return 0;
+
+	if (!checkSuccess(pCamera->GetFeatureByName("OffsetY", pFeature), "get OffsetY feature")) return 0;
+	pFeature->GetValue(current);
+	if (current != (INT64)offsety)
+		if (!checkSuccess(pFeature->SetValue(offsety), "set OffsetY")) return 0;
+
+	if (!checkSuccess(pCamera->GetFeatureByName("Height", pFeature), "get Height feature")) return 0;
+	pFeature->GetValue(current);
+	if (current != (INT64)height)
+		if (!checkSuccess(pFeature->SetValue(height), "set Height")) return 0;
+
+	if (!checkSuccess(pCamera->GetFeatureByName("Width", pFeature), "get Width feature")) return 0;
+	pFeature->GetValue(current);
+	if (current != (INT64)width)
+		if (!checkSuccess(pFeature->SetValue(width), "set Width")) return 0;
+
+	return 1;
+}
+
+
 
 int grab_multiframe(vimba::FramePtrVector & pFrames)
 {
@@ -867,4 +899,36 @@ int IDL_STDCALL VimbaSnap(int argc, void* argv[])
 */
 	return 1;
 	
+}
+
+/****************************************************************/
+/*  subregion
+/*  IDL>  x=call_external(dll,'VimbaRoi', regionX, regionY, width, height)
+/****************************************************************/
+int IDL_STDCALL VimbaRoi(int argc, void* argv[])
+{
+	using idl_int_t = INT32;
+
+	idl_int_t regionX = *((idl_int_t*)argv[0]);
+	idl_int_t regionY = *((idl_int_t*)argv[1]);
+	idl_int_t width   = *((idl_int_t*)argv[2]);
+	idl_int_t height  = *((idl_int_t*)argv[3]);
+
+	//char message[100];
+	//sprintf_s(message, "regionX=%d, regionY=%d, width=%d, height=%d", regionX, regionY, width, height);
+	//INFO::info(message);
+
+	if (!set_roi(regionX, regionY, width, height))
+	{
+		INFO::error("failed to set roi in vimba");
+		return 0;
+	}
+
+	if (!init_preview_handler())
+	{
+		INFO::error("failed to re-init preview handler");
+		return 0;
+	}
+
+	return 1;
 }
