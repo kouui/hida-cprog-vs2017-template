@@ -62,11 +62,9 @@ namespace INFO
 /****************************************************************/
 /*  vimba for hida observation
 /****************************************************************/
-namespace Vhida
-{
-
 
 namespace vimba = AVT::VmbAPI;
+
 
 //: get a reference to the vimba system api
 vimba::VimbaSystem& sys = vimba::VimbaSystem::GetInstance();
@@ -75,6 +73,8 @@ std::atomic<bool> flag_sys = false;
 //: camera pointer
 vimba::CameraPtr pCamera;
 std::atomic<bool> flag_cam = false;
+
+VmbUint32_t TIMEOUT = 20 * 1000;
 
 
 bool checkSuccess(VmbErrorType err, const char * text)
@@ -89,12 +89,6 @@ bool checkSuccess(VmbErrorType err, const char * text)
 	}
 	return true;
 }
-
-
-namespace Preview 
-{
-
-VmbUint32_t TIMEOUT = 10 * 1000;
 
 VmbUint32_t get_image_size(const vimba::CameraPtr tmp_pcamera)
 {
@@ -113,33 +107,76 @@ VmbInt64_t get_nPLS(const vimba::CameraPtr tmp_pcamera)
 	//: Get the image size for the required buffer
 	if (!checkSuccess(tmp_pcamera->GetFeatureByName("PayloadSize", pFeature), "get PayloadSize feature")) return 0;
 	if (!checkSuccess(pFeature->GetValue(nPLS), "get PayloadSize")) return 0;
-	
+
 	return nPLS;
 }
 
-//: handler to store the current frame during preview
+struct STime {
+	UINT16 hour;
+	UINT16 minute;
+	UINT16 second;
+	UINT16 milisecond;
+	UINT16 microsecond;
+	UINT16 nanoosecond;
+};
 
-bool isHandleAllocated = false;
+STime timestamp_to_STime(const VmbUint64_t timestamp)
+{
 
-class Handler
+	UINT64 factor = 1000 * 1000 * 1000;
+	UINT64 total_seconds = timestamp / factor;
+	UINT64 total_nanoseconds = timestamp / factor;
+
+	UINT64 hour = total_seconds / 60 / 60;
+	UINT64 minute = (total_seconds - hour * 60 * 60) / 60;
+	UINT64 second = total_seconds - hour * 60 * 60 - minute * 60;
+
+	UINT64 milisecond = total_nanoseconds / 1000 / 1000;
+	UINT64 microsecond = (total_nanoseconds - milisecond * 1000 * 1000) / 1000;
+	UINT64 nanosecond = total_nanoseconds - milisecond * 1000 * 1000 - microsecond * 1000;
+
+	STime st;
+	st.hour = (UINT16)hour;
+	st.minute = (UINT16)minute;
+	st.second = (UINT16)second;
+	st.milisecond = (UINT16)milisecond;
+	st.microsecond = (UINT16)microsecond;
+	st.nanoosecond = (UINT16)nanosecond;
+
+	return std::move(st);
+}
+
+/****************************************************************/
+/*  class/struct definition
+/****************************************************************/
+
+class PreviewHandler
 {
 public:
-	Handler(const vimba::CameraPtr tmp_pcamera)
+	PreviewHandler(const vimba::CameraPtr tmp_pcamera)
 	{
-		//: register frame for asynchronous acuisition
-		async_pframe.reset( new vimba::Frame(get_nPLS(tmp_pcamera)) );
-		
-		//: allocate memory space to the buffer
-		imageSize = get_image_size(tmp_pcamera);
-		// checkSuccess(async_pframe->GetImageSize(imageSize), "get imageSize");
-		pimage = new VmbUchar_t[imageSize];
+		//: allocate buffer according to nPLS
 
 		//char message[100];
-		//sprintf_s(message, "imageSize=%u", imageSize);
+
+		VmbInt64_t my_nPLS = get_nPLS(tmp_pcamera);
+
+		//sprintf_s(message, "nPLS=%lld", my_nPLS);
 		//INFO::info(message);
+
+		imageSize = get_image_size(tmp_pcamera);
+
+		//sprintf_s(message, "imageSize=%iu", imageSize);
+		//INFO::info(message);
+
+		pimage = new VmbUchar_t[imageSize];
+
+		//: allocate frame for capturing
+		//async_pframe.reset(new vimba::Frame(my_nPLS));
+
 	}
 
-	~Handler() 
+	~PreviewHandler()
 	{
 		// release memory space of buffer
 		delete[] pimage;
@@ -150,9 +187,9 @@ public:
 		do {
 			sleep_milisecond(1);
 		} while (isBusy.load());
-		
+
 		isBusy.store(true);
-		
+
 		VmbUchar_t* buffer;
 		pframe->GetImage(buffer);
 		memcpy((void*)pimage, (void*)buffer, imageSize);
@@ -167,96 +204,62 @@ public:
 		} while (isBusy.load());
 
 		isBusy.store(true);
-		
+
 		memcpy((void*)idlbuffer, (void*)pimage, imageSize);
 
 		isBusy.store(false);
 	}
 
-	std::atomic<bool> isBusy=false;
+	vimba::FramePtrVector async_pframes = vimba::FramePtrVector(2);
+	std::atomic<bool> isBusy = false;
 	VmbUint32_t imageSize;
 	VmbUchar_t* pimage;
-	vimba::FramePtr async_pframe;
+	
+
 };
 
-/****************************************************************/
-/*  frameobserver for preview
-/****************************************************************/
-class FrameObserver : virtual public vimba::IFrameObserver
+class PreviewFrameObserver : virtual public vimba::IFrameObserver
 {
 public:
-	FrameObserver(vimba::CameraPtr pCamera, std::shared_ptr<Handler> pHandler) : vimba::IFrameObserver(pCamera)
+	PreviewFrameObserver(vimba::CameraPtr pCamera, std::shared_ptr<PreviewHandler> pHandler) : vimba::IFrameObserver(pCamera)
 	{
-		m_pHandler = pHandler;
+		m_pPHandler = pHandler;
 	}
 
-	std::shared_ptr<Handler> m_pHandler;
+	std::shared_ptr<PreviewHandler> m_pPHandler;
 
 	void FrameReceived(const vimba::FramePtr pFrame)
 	{
-		//VmbUint32_t imSize;
-		//pFrame->GetImageSize(imSize);
-		//char message[100];
-		//sprintf_s(message, "imSize=%u", imSize);
-		//INFO::info(message);
-
 		//: copy to handler
-		m_pHandler->set_image(pFrame);
+		m_pPHandler->set_image(pFrame);
 
 		//: send pFrame back to queue to recieve next frame buffer -> asynchronous
 		m_pCamera->QueueFrame(pFrame);
 	}
-	
 };
 
-}
+std::shared_ptr<PreviewHandler> pPreviewHandler;
+//PreviewHandler* pPreviewHandler=nullptr;
 
-
-//: preview handler 
-//std::auto_ptr<Preview::Handler> pPreviewHandler;
-std::shared_ptr<Preview::Handler> pPreviewHandler;
-//Preview::Handler* pPreviewHandler;
-
-namespace Observation
-{
-
-VmbUint32_t TIMEOUT = 20 * 1000;
-
-/****************************************************************/
-/*  frameobserver for observation
-/****************************************************************/
-class FrameObserver : virtual public vimba::IFrameObserver
+class ObservationFrameObserver : virtual public vimba::IFrameObserver
 {
 public:
-	FrameObserver(vimba::CameraPtr pCamera) : vimba::IFrameObserver(pCamera) {}
-
+	ObservationFrameObserver(vimba::CameraPtr pCamera) : vimba::IFrameObserver(pCamera) {}
 	void FrameReceived(const vimba::FramePtr pFrame)
 	{
-		//: might do some process here
-		//INFO::info("frame acquired");
+		// Send notification to working thread
+		// Do not apply image processing within this callback (performance)
+		// When the frame has been processed , requeue it
 
 
-		//: during observation, we mainly perform multi-frame sequential capturing -> synchronous
-		//: don't send pFrame back to queue to recieve next frame buffer
+		// synchronous multiframe : without the following line
+		// asynchronous preview   : with    the following line
 		//m_pCamera->QueueFrame(pFrame);
+
 	}
 
+	int myCount = 0;
 };
-
-}
-
-
-
-/****************************************************************/
-/*  
-/****************************************************************/
-
-
-//: payload size value
-//VmbInt64_t nPLS;
-
-
-
 
 bool checkReady()
 {
@@ -286,19 +289,19 @@ int init_camera(std::string & cameraID)
 		return 0;
 	}
 
-	
-	if (cameraID.empty()) 
+
+	if (cameraID.empty())
 	{
 		vimba::CameraPtrVector cameras;
-		
+
 		if (!checkSuccess(sys.GetCameras(cameras), "searching available camera")) return 0;
 
-		if (cameras.empty()) 
+		if (cameras.empty())
 		{
 			INFO::error("no cameras found");
 			return 0;
 		}
-		
+
 		if (!checkSuccess(cameras[0]->Open(VmbAccessModeFull), "open camera")) return 0;
 
 		pCamera = cameras[0];
@@ -310,11 +313,21 @@ int init_camera(std::string & cameraID)
 			return 0;
 	}
 
-	char message[100];
-	sprintf_s(message, "Camera %s", cameraID.c_str());
-	INFO::info(message);
+	//char message[100];
+	//sprintf_s(message, "Camera %s", cameraID.c_str());
+	//INFO::info(message);
 
 	flag_cam = true;
+	return 1;
+}
+
+int init_preview_handler()
+{	
+	//if (pPreviewHandler != nullptr) 
+
+	//pPreviewHandler = new PreviewHandler(pCamera);
+
+	pPreviewHandler = std::make_shared<PreviewHandler>(pCamera);
 	return 1;
 }
 
@@ -349,21 +362,6 @@ int close_sys()
 	return 1;
 }
 
-int init_preview_handler()
-{
-	//vimba::FeaturePtr pFeature;
-
-	//: Get the image size for the required buffer
-	//if (!checkSuccess(pCamera->GetFeatureByName("PayloadSize", pFeature),"get PayloadSize feature")) return 0;
-	//if (!checkSuccess(pFeature->GetValue(nPLS),"get PayloadSize")) return 0;
-
-	//pPreviewHandler = new Preview::Handler(nPLS);
-	pPreviewHandler = std::make_shared<Preview::Handler>(pCamera);
-	Preview::isHandleAllocated = true;
-
-	return 1;
-}
-
 int load_configuration(const std::string xmlFile)
 {
 	if (!checkReady()) return 0;
@@ -383,7 +381,7 @@ int set_maximum_gev_packet()
 		return 0;
 
 	if (!checkSuccess(pFeature->RunCommand(), "set GeV packet feature")) return 0;
-	
+
 	{
 		bool bIsCommandDone = false;
 		do
@@ -391,7 +389,7 @@ int set_maximum_gev_packet()
 			if (VmbErrorSuccess != pFeature->IsCommandDone(bIsCommandDone)) break;
 		} while (false == bIsCommandDone);
 
-		INFO::info("GVSPAdjustPacketSize RunCommand completed");
+		//INFO::info("GVSPAdjustPacketSize RunCommand completed");
 	}
 
 	return 1;
@@ -403,14 +401,14 @@ int set_exposure(const double value, const std::string featureWord) // [microsec
 
 	vimba::FeaturePtr pFeature;
 	if (!checkSuccess(pCamera->GetFeatureByName(featureWord.c_str(), pFeature), "get exposure time feature")) return 0;
-	
+
 	if (!checkSuccess(pFeature->SetValue(value), "set exposure time")) return 0;
 
 	double current_value;
 	if (!checkSuccess(pFeature->GetValue(current_value), "get exposure time")) return 0;
 
 	char message[100];
-	sprintf_s(message, "Exposure = %.2f [ms]", current_value/1000.);
+	sprintf_s(message, "Exposure = %.2f [ms]", current_value / 1000.);
 	INFO::info(message);
 
 	return 1;
@@ -434,7 +432,7 @@ int set_framerate(const double value, const std::string featureWord)
 
 	vimba::FeaturePtr pFeature;
 	if (!checkSuccess(pCamera->GetFeatureByName(featureWord.c_str(), pFeature), "get framerate feature")) return 0;
-	
+
 	if (!checkSuccess(pFeature->SetValue(value), "set framerate")) return 0;
 
 	double current_value;
@@ -472,61 +470,84 @@ int set_acquisition(const char * mode)
 	return 1;
 }
 
-
-
-int grab_multiframe(vimba::FramePtrVector pFrames0)
+int grab_multiframe(vimba::FramePtrVector & pFrames)
 {
 	if (!checkReady()) return 0;
-	vimba::FramePtrVector pFrames(2);
 
-	//: we init nPLS at camera initialization
+	VmbInt64_t nPLS; // Payload size value
+	vimba::FeaturePtr pFeature; // Generic feature pointer
 
-	//: payload size value
-	VmbInt64_t nPLS = Vhida::Preview::get_nPLS(pCamera);
-	vimba::FeaturePtr pFeature;
+	//FramePtrVector pFrames(3);
 
-	//: we set AcquisitionMode to continuous ahead (at camera initialization?)
+
+	// Get the image size for the required buffer
+	pCamera->GetFeatureByName("PayloadSize", pFeature);
+	pFeature->GetValue(nPLS);
+
+	// 
+	//checkSuccess(pCamera->GetFeatureByName("AcquisitionMode", pFeature), "Get AcquisitionMode");
+	//checkSuccess(pFeature->SetValue("Continuous"), "Set AcquisitionMode Value");
+
 	for (vimba::FramePtrVector::iterator iter = pFrames.begin(); pFrames.end() != iter; ++iter)
 	{
-		//: Allocate memory for frame buffer
+		// Allocate memory for frame buffer
 		(*iter).reset(new vimba::Frame(nPLS));
-		//: Register frame observer/callback for each frame
-		checkSuccess((*iter)->RegisterObserver(vimba::IFrameObserverPtr(new Observation::FrameObserver(pCamera))),"register observer");
-		//: announce frame to the API
-		checkSuccess(pCamera->AnnounceFrame(*iter)," announce frame");
+		// [x] Register frame observer/callback for each frame
+		(*iter)->RegisterObserver(vimba::IFrameObserverPtr(new ObservationFrameObserver(pCamera)));
+		//announce frame to the API
+		checkSuccess(pCamera->AnnounceFrame(*iter), " announce frame");
 	}
 
-	//: start the capture engine (API)
-	checkSuccess(pCamera->StartCapture(),"start capture");
-	
-	//: put frame into the frame queue
+
+	// start the capture engine (API)
+	checkSuccess( pCamera->StartCapture(), "start capture");
+
+
+	// put frame into the frame queue
 	for (vimba::FramePtrVector::iterator iter = pFrames.begin(); pFrames.end() != iter; ++iter)
-		pCamera->QueueFrame(*iter);
-
-	//: Start the acuisition engine (camera)
-	checkSuccess(pCamera->GetFeatureByName("AcquisitionStart", pFeature),"get AcquisitionStart");
-	checkSuccess(pFeature->RunCommand(),"AcquisitionStart run");
+		checkSuccess( pCamera->QueueFrame(*iter), "queue frame");
 
 
-	//: ... frame being filled asynchronously
 
-	//: wait for complete
-	sleep_milisecond(2*1000);
-	/*
+	// Start the acuisition engine (camera)
+	pCamera->GetFeatureByName("AcquisitionStart", pFeature);
+	pFeature->RunCommand();
+
+	// ... frame being filled asynchronously
+
+
+	// check complete
+
 	for (vimba::FramePtrVector::iterator iter = pFrames.begin(); pFrames.end() != iter; ++iter)
 	{
+		int count = 0;
 		VmbFrameStatusType eReceiveStatus;
 		do {
 			(*iter)->GetReceiveStatus(eReceiveStatus);
 			sleep_milisecond(2);
+			count += 1;
+			if (count > 10 * 1000) break; // timeout = 20 [sec] for each image
 		} while (eReceiveStatus != VmbFrameStatusComplete);
 	}
-	*/
-	//: Stop the acquisition engine(camera)
-	checkSuccess( pCamera->GetFeatureByName("AcquisitionStop", pFeature), "get Acquisition stop");
-	checkSuccess( pFeature->RunCommand(), "Acuisition stop");
-	//: Stop the capture engine (API) (correspond to pCamera->StartCapture )	checkSuccess(pCamera->EndCapture(), "end capture");	//: flush the frame queue (correspond to pCamera->QueueFrame )	checkSuccess( pCamera->FlushQueue(), "flush queue");	//: revoke all frame from the API (correspond to pCamera->AnnounceFrame )	checkSuccess( pCamera->RevokeAllFrames(), "revoke all frames");	// unregister the frame observer	for (vimba::FramePtrVector::iterator iter = pFrames.begin(); pFrames.end() != iter; ++iter)		checkSuccess( (*iter)->UnregisterObserver(), "unregister observer");
 
+
+
+	// Stop the acquisition engine(camera)
+	pCamera->GetFeatureByName("AcquisitionStop", pFeature);
+	pFeature->RunCommand();
+
+	// Stop the capture engine (API) (correspond to pCamera->StartCapture )
+	checkSuccess( pCamera->EndCapture(), "end capture");
+	// flush the frame queue (correspond to pCamera->QueueFrame )
+	checkSuccess( pCamera->FlushQueue(), " flush queue");
+	// revoke all frame from the API (correspond to pCamera->AnnounceFrame )
+	checkSuccess( pCamera->RevokeAllFrames(), " revoke all frames");
+	// unregister the frame observer
+	for (vimba::FramePtrVector::iterator iter = pFrames.begin(); pFrames.end() != iter; ++iter)
+		(*iter)->UnregisterObserver();
+
+	// FramePtr is a smart pointer, so it will release itself 
+	
 	return 1;
 }
 
@@ -534,21 +555,40 @@ int init_preview()
 {
 	if (!checkReady()) return 0;
 
+	//: allocate frame
+	VmbInt64_t nPLS = get_nPLS(pCamera);
+	for (vimba::FramePtrVector::iterator iter = pPreviewHandler->async_pframes.begin(); pPreviewHandler->async_pframes.end() != iter; ++iter)
+	{
+		// Allocate memory for frame buffer
+		(*iter).reset(new vimba::Frame(nPLS));
+		// [x] Register frame observer/callback for each frame
+		(*iter)->RegisterObserver(vimba::IFrameObserverPtr(new PreviewFrameObserver(pCamera, pPreviewHandler)));
+		//announce frame to the API
+		checkSuccess(pCamera->AnnounceFrame(*iter), " announce frame preview");
+	}	
+	//pPreviewHandler->async_pframe.reset(new vimba::Frame(nPLS));
+	
+	/*
 	//:Register frame observer/callback for each frame
-	checkSuccess( pPreviewHandler->async_pframe->RegisterObserver(vimba::IFrameObserverPtr(new Preview::FrameObserver(pCamera, pPreviewHandler))), "register observer");
+	checkSuccess(
+		pPreviewHandler->async_pframe->RegisterObserver(vimba::IFrameObserverPtr(new PreviewFrameObserver(pCamera, pPreviewHandler))),
+		"register observer preview"
+	);
 	//: announce frame to the API
-	checkSuccess( pCamera->AnnounceFrame(pPreviewHandler->async_pframe), "announce frame");
+	checkSuccess( pCamera->AnnounceFrame(pPreviewHandler->async_pframe), "announce frame preview");
+	*/
 
 	//: start the capture engine (API)
-	checkSuccess( pCamera->StartCapture(), "start capture");
-
+	checkSuccess( pCamera->StartCapture(), "start capture preview");
+	
 	//: put frame into the frame queue
-	checkSuccess( pCamera->QueueFrame(pPreviewHandler->async_pframe), "queue frame");
-
+	for (vimba::FramePtrVector::iterator iter = pPreviewHandler->async_pframes.begin(); pPreviewHandler->async_pframes.end() != iter; ++iter)
+		checkSuccess( pCamera->QueueFrame((*iter)), "queue frame preview");
+	
 	//: Start the acuisition engine (camera)
 	vimba::FeaturePtr pFeature;
 	pCamera->GetFeatureByName("AcquisitionStart", pFeature);
-	checkSuccess( pFeature->RunCommand() , "acquisition start");
+	checkSuccess( pFeature->RunCommand(), "acquisition start preview");
 
 	return 1;
 }
@@ -560,94 +600,69 @@ int close_preview()
 	//: Stop the acquisition engine(camera)
 	vimba::FeaturePtr pFeature;
 	pCamera->GetFeatureByName("AcquisitionStop", pFeature);
-	checkSuccess( pFeature->RunCommand(), "stop acquisition");
+	pFeature->RunCommand();
 
-	//: Stop the capture engine (API) (correspond to pCamera->StartCapture )	checkSuccess( pCamera->EndCapture(), "end capture");	//: flush the frame queue (correspond to pCamera->QueueFrame )	checkSuccess( pCamera->FlushQueue(), "flush queue");	//: revoke all frame from the API (correspond to pCamera->AnnounceFrame )	checkSuccess( pCamera->RevokeFrame(Vhida::pPreviewHandler->async_pframe), "revoke all frames");
+	//: Stop the capture engine (API) (correspond to pCamera->StartCapture )
+	pCamera->EndCapture();
+	//: flush the frame queue (correspond to pCamera->QueueFrame )
+	pCamera->FlushQueue();
+	//: revoke all frame from the API (correspond to pCamera->AnnounceFrame )
+	pCamera->RevokeAllFrames();
 
-	checkSuccess( pPreviewHandler->async_pframe->UnregisterObserver(), "unregister observer");
+	for (vimba::FramePtrVector::iterator iter = pPreviewHandler->async_pframes.begin();  pPreviewHandler->async_pframes.end() != iter; ++iter)
+		(*iter)->UnregisterObserver();
 
 	return 1;
 }
 
-int get_preview_frame()
-{
-	//if (!checkReady()) return 0;
-	return 1;
-}
 
-
-
-struct STime {
-	UINT16 hour;
-	UINT16 minute;
-	UINT16 second;
-	UINT16 milisecond;
-	UINT16 microsecond;
-	UINT16 nanoosecond;
-};
-
-STime timestamp_to_STime(const VmbUint64_t timestamp)
-{
-
-	UINT64 factor = 1000 * 1000 * 1000;
-	UINT64 total_seconds = timestamp / factor;
-	UINT64 total_nanoseconds = timestamp / factor;
-
-	UINT64 hour   = total_seconds / 60 / 60;
-	UINT64 minute = (total_seconds - hour*60*60) / 60;
-	UINT64 second = total_seconds - hour * 60 * 60 - minute * 60;
-
-	UINT64 milisecond  = total_nanoseconds / 1000 / 1000;
-	UINT64 microsecond = (total_nanoseconds - milisecond * 1000 * 1000) / 1000;
-	UINT64 nanosecond  = total_nanoseconds - milisecond * 1000 * 1000 - microsecond * 1000;
-
-	STime st;
-	st.hour        = (UINT16) hour;
-	st.minute      = (UINT16) minute;
-	st.second      = (UINT16) second;
-	st.milisecond  = (UINT16) milisecond;
-	st.microsecond = (UINT16) microsecond;
-	st.nanoosecond = (UINT16) nanosecond;
-
-	return std::move(st);
-}
-
-}
+/****************************************************************/
+/*  IDL related functions
+/****************************************************************/
 
 std::string getIDLString(const void* argv)
 {
 	IDL_STRING* s_ptr = (IDL_STRING *)argv;
 	std::string str(s_ptr[0].s, s_ptr[0].s + s_ptr[0].slen);
-	
+
 	return std::move(str);
 }
 
+
+
+
+
 /****************************************************************/
 /*  camera connection
-/*  IDL>  x=call_external(dll,'VimbaInit', "Z:\\conf\\Vimba\\demo.20211216.xml")
+/*  IDL>  x=call_external(dll,'VimbaInit')
 /****************************************************************/
 
 int IDL_STDCALL VimbaInit(int argc, void* argv[])
 {
-	if (!Vhida::init_sys()) return 0;
-	
-	std::string cameraID = "";
-	if (!Vhida::init_camera(cameraID)) return 0;
+	if (!init_sys()) return 0;
+	return 1;
+}
 
-	
+int IDL_STDCALL VimbaInitCamera(int argc, void* argv[])
+{
+	//std::string cameraID = "";
+	std::string cameraID = getIDLString(argv[0]);
+	if (!init_camera(cameraID)) return 0;
+
+
 	//std::string xmlFile = "Z:\\conf\\Vimba\\demo.20211216.xml";
-	std::string xmlFile = getIDLString(argv[0]);
-	if (!Vhida::load_configuration(xmlFile)) return 0;
-	
-	if (!Vhida::set_maximum_gev_packet()) return 0;
+	std::string xmlFile = getIDLString(argv[1]);
+	if (!load_configuration(xmlFile)) return 0;
 
-	//if (!Vhida::init_preview_handler()) return 0;
-	
+	if (!set_maximum_gev_packet()) return 0;
 
-	//char message[100];
-	//sprintf_s(message, "Camera %s initialized", cameraID.c_str());
-	//INFO::info(message);
-	
+	if (!init_preview_handler()) return 0;
+
+
+	char message[100];
+	sprintf_s(message, "Camera %s initialized", cameraID.c_str());
+	INFO::info(message);
+
 	return 1;
 }
 
@@ -658,10 +673,18 @@ int IDL_STDCALL VimbaInit(int argc, void* argv[])
 
 int IDL_STDCALL VimbaClose(int argc, void* argv[])
 {
-	if (!Vhida::close_camera()) return 0;
-	if (!Vhida::close_sys()) return 0;
+
+	if (!close_camera()) {
+		INFO::error("failed to close camera");
+		return 0;
+	}
+	if (!close_sys()) {
+		INFO::error("failed to close sys");
+		return 0;
+	}
 
 	INFO::info("Camera disconnected");
+
 	return 1;
 }
 
@@ -681,7 +704,7 @@ int IDL_STDCALL SetVimbaExpoTime(int argc, void* argv[])
 
 	std::string featureWord = getIDLString(argv[1]);
 
-	if (!Vhida::set_exposure(expotime*1000., featureWord)) return 0;
+	if (!set_exposure(expotime*1000., featureWord)) return 0;
 
 	return 1;
 }
@@ -701,7 +724,7 @@ int IDL_STDCALL SetVimbaFrameRate(int argc, void* argv[])
 
 	std::string featureWord = getIDLString(argv[1]);
 
-	if (!Vhida::set_framerate(framerate, featureWord)) return 0;
+	if (!set_framerate(framerate, featureWord)) return 0;
 
 	return 1;
 }
@@ -723,7 +746,8 @@ int IDL_STDCALL SetVimbaFrameRate(int argc, void* argv[])
 
 int IDL_STDCALL StartVimbaPreview(int argc, void* argv[])
 {
-	if (!Vhida::init_preview()) return 0;
+	if (!init_preview()) return 0;
+
 	return 1;
 }
 
@@ -732,14 +756,15 @@ int IDL_STDCALL GetVimbaPreview(int argc, void* argv[])
 {
 	UINT16* idlBuffer = (UINT16 *)argv[0];
 
-	Vhida::pPreviewHandler->copy_image(idlBuffer);
+	pPreviewHandler->copy_image(idlBuffer);
 
 	return 1;
 }
 
 int IDL_STDCALL StopVimbaPreview(int argc, void* argv[])
 {
-	if (!Vhida::close_preview()) return 0;
+	if (!close_preview()) return 0;
+
 	return 1;
 }
 
@@ -751,10 +776,8 @@ int IDL_STDCALL StopVimbaPreview(int argc, void* argv[])
 
 int IDL_STDCALL VimbaObs(int argc, void* argv[])
 {
-	//Vhida::close_camera();
-	//std::string cid("");
-	//Vhida::init_camera(cid);
 
+	
 	UINT16 nFrame = (UINT16) *((UINT16*)argv[0]);
 	//char message[100];
 	//sprintf_s(message, "nFrame=%u", nFrame);
@@ -767,10 +790,9 @@ int IDL_STDCALL VimbaObs(int argc, void* argv[])
 	std::string featureWord = getIDLString(argv[4]);
 	
 	//: acquire image
-	Vhida::vimba::FramePtrVector pFrames(nFrame);
-	//if (!Vhida::grab_multiframe(pFrames)) return 0;
-	//return 1;
-	Vhida::pCamera->AcquireMultipleImages(pFrames,Vhida::Observation::TIMEOUT);
+	vimba::FramePtrVector pFrames(nFrame);
+	if (!grab_multiframe(pFrames)) return 0;
+	//Vhida::pCamera->AcquireMultipleImages(pFrames,Vhida::Observation::TIMEOUT);
 
 	
 	VmbUint32_t imageSize;
@@ -778,13 +800,13 @@ int IDL_STDCALL VimbaObs(int argc, void* argv[])
 
 	// get framerate
 	double frate;
-	Vhida::get_framerate(frate, featureWord);
+	get_framerate(frate, featureWord);
 
 	int nTimeParam = 6;
 	//: copy memory data
 	for (int i=0; i<nFrame; ++i) 
 	{
-		Vhida::vimba::FramePtr frame = pFrames.at(i);
+		vimba::FramePtr frame = pFrames.at(i);
 
 		// get image buffer
 		VmbUchar_t* pimage;
@@ -793,6 +815,9 @@ int IDL_STDCALL VimbaObs(int argc, void* argv[])
 		// get timestamp
 		VmbUint64_t timestamp;
 		frame->GetTimestamp(timestamp);
+		//char message[100];
+		//sprintf_s(message, "timestamp=%llu", timestamp);
+		//INFO::info(message);
 
 		
 
@@ -800,7 +825,7 @@ int IDL_STDCALL VimbaObs(int argc, void* argv[])
 		memcpy( (void*)(idlBuffer + i*imageSize/2), (void*)(pimage) , imageSize);
 
 		// copy timestamp memory
-		auto st = Vhida::timestamp_to_STime(timestamp);
+		auto st = timestamp_to_STime(timestamp);
 		*(idlBuffer_time + i * nTimeParam + 0) = st.hour;
 		*(idlBuffer_time + i * nTimeParam + 1) = st.minute;
 		*(idlBuffer_time + i * nTimeParam + 2) = st.second;
@@ -813,7 +838,6 @@ int IDL_STDCALL VimbaObs(int argc, void* argv[])
 		*(idlBuffer_framerate + i) = (float) frate;
 	}
 
-	
 	return 1;
 
 }
@@ -826,7 +850,7 @@ int IDL_STDCALL VimbaObs(int argc, void* argv[])
 
 
 int IDL_STDCALL VimbaSnap(int argc, void* argv[])
-{
+{/*
 	UINT16* idlBuffer = (UINT16*)argv[0];              // idl buffer for 2d image array
 
 	Vhida::vimba::FramePtr pframe;
@@ -840,8 +864,7 @@ int IDL_STDCALL VimbaSnap(int argc, void* argv[])
 
 	// copy image memory
 	memcpy((void*)(idlBuffer), (void*)(pimage), imageSize);
-
+*/
 	return 1;
 	
 }
-

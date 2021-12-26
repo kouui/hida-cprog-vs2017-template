@@ -4,6 +4,7 @@ EXPORTS
 
 Å@Å@Hello
 	VimbaInit
+	VimbaInitCamera
 	VimbaClose
 	SetVimbaExpoTime
 	SetVimbaFrameRate
