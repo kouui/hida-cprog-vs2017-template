@@ -79,6 +79,22 @@ int init_sys()
 	return 1;
 }
 
+int close_sys()
+{
+
+	if (!flag_sys) {
+		INFO::error("flag_sys is flase before closing sys");
+		//return 0;
+	}
+	if (!checkSuccess(sys.Shutdown(), "close sys")) return 0;
+	flag_sys = false;
+
+	// release preview handler
+	//delete pPreviewHandler;
+
+	return 1;
+}
+
 bool checkSuccess(VmbErrorType err, const char * text)
 {
 	if (err != VmbErrorSuccess) {
@@ -524,26 +540,6 @@ public:
 		return 1;
 	}
 
-	int close_sys()
-	{
-		if (flag_cam) {
-			INFO::error("flag_cam is true. close camera before closing sys");
-			close_camera();
-		}
-
-		if (!flag_sys) {
-			INFO::error("flag_sys is flase before closing sys");
-			//return 0;
-		}
-		if (!checkSuccess(sys.Shutdown(), "close sys")) return 0;
-		flag_sys = false;
-
-		// release preview handler
-		//delete pPreviewHandler;
-
-		return 1;
-	}
-
 	int grab_multiframe(vimba::FramePtrVector & pFrames)
 	{
 		if (!checkReady()) return 0;
@@ -732,6 +728,19 @@ int checkCameraHandlersLength(int num)
 
 	return 1;
 }
+
+int checkNumAvailable(int num)
+{
+	if (num + 1 > pCameraHandlers.size)
+	{
+		char message[100];
+		sprintf_s(message, "camera number %d with %d cameras initialized", num, pCameraHandlers.size);
+		INFO::error(message);
+		return 0;
+	}
+
+	return 1;
+}
 /****************************************************************/
 /*  camera connection
 /*  IDL>  x=call_external(dll,'VimbaInit')
@@ -752,17 +761,33 @@ int IDL_STDCALL VimbaInitCamera(int argc, void* argv[])
 
 	//std::string cameraID = "";
 	std::string cameraID = getIDLString(argv[1]);
-	if (!init_camera(cameraID)) return 0;
+	if (!pchandler->init_camera(cameraID))
+	{
+		delete pchandler;
+		return 0;
+	}
+		
+	std::string xmlFile = getIDLString(argv[2]);
+	if (!pchandler->load_configuration(xmlFile))
+	{
+		delete pchandler;
+		return 0;
+	}
 
+	if (!pchandler->set_maximum_gev_packet())
+	{
+		delete pchandler;
+		return 0;
+	}
 
-	//std::string xmlFile = "Z:\\conf\\Vimba\\demo.20211216.xml";
-	std::string xmlFile = getIDLString(argv[1]);
-	if (!load_configuration(xmlFile)) return 0;
+	if (!pchandler->init_preview_handler())
+	{
+		delete pchandler;
+		return 0;
+	}
 
-	if (!set_maximum_gev_packet()) return 0;
-
-	if (!init_preview_handler()) return 0;
-
+	// add to camera handler pointer to global vector 
+	pCameraHandlers.push_back( pchandler );
 
 	char message[100];
 	sprintf_s(message, "Camera %s initialized", cameraID.c_str());
@@ -779,67 +804,84 @@ int IDL_STDCALL VimbaInitCamera(int argc, void* argv[])
 int IDL_STDCALL VimbaClose(int argc, void* argv[])
 {
 
-	//for (auto p : v)
-	//{
-	//	delete p;
-	//}
-	//v.clear();
-
 	//: 1. close all camera
 	//: 2. delete all camerahandler
 	//: 3. close sys
 
-	if (!close_camera()) {
-		INFO::error("failed to close camera");
-		return 0;
+	//: close cameras
+	int count = 0;
+	for (auto pchandler : pCameraHandlers)
+	{
+		if (!pchandler->close_camera())
+		{
+			char message[100];
+			sprintf_s(message, "failed to close camera number %d", count);
+			INFO::error(message);
+			return 0;
+		}
+		delete pchandler;
+		count++;
 	}
+	pCameraHandlers.clear();
+
+	//: close vimba api
 	if (!close_sys()) {
 		INFO::error("failed to close sys");
 		return 0;
 	}
 
-	INFO::info("Camera disconnected");
+	INFO::info("Vimba disconnected");
 
 	return 1;
 }
 
 /****************************************************************/
 /*  set camera exposure
-/*  IDL>  x=call_external(dll,'SetVimbaExpoTime',[50.],"ExposureTime")
+/*  IDL>  x=call_external(dll,'SetVimbaExpoTime',0,[50.],"ExposureTime")
 /****************************************************************/
 
 int IDL_STDCALL SetVimbaExpoTime(int argc, void* argv[])
 {
+	auto num = getIDLShort(argv[0]);
+	if (!checkNumAvailable(num)) return 0;
+	auto pchandler = pCameraHandlers.at(num);
+
 	double expotime;         // [miliseconds]
 	//double expotime_current; // [miliseconds]
 
-	// expotime = (double)argv[0];
-	float* expo_arr = (float*)argv[0];
+	
+	float* expo_arr = (float*)argv[1];
 	expotime = (double) expo_arr[0];
 
-	std::string featureWord = getIDLString(argv[1]);
+	std::string featureWord = getIDLString(argv[2]);
 
-	if (!set_exposure(expotime*1000., featureWord)) return 0;
+	
+	if (!pchandler->set_exposure(expotime*1000., featureWord)) return 0;
 
 	return 1;
 }
 
 /****************************************************************/
 /*  set camera framerate
-/*  IDL>  x=call_external(dll,'SetVimbaFrameRate', [20.],"AcquisitionFrameRate")
+/*  IDL>  x=call_external(dll,'SetVimbaFrameRate', 0, [20.],"AcquisitionFrameRate")
 /****************************************************************/
 
 int IDL_STDCALL SetVimbaFrameRate(int argc, void* argv[])
 {
+	auto num = getIDLShort(argv[0]);
+	if (!checkNumAvailable(num)) return 0;
+	auto pchandler = pCameraHandlers.at(num);
+
 	double framerate;         // [hz]
 	//double framerate_current; // [hz]
 
-	float* framerate_arr = (float*)argv[0];
+	float* framerate_arr = (float*)argv[1];
 	framerate = (double)framerate_arr[0];
 
-	std::string featureWord = getIDLString(argv[1]);
+	std::string featureWord = getIDLString(argv[2]);
 
-	if (!set_framerate(framerate, featureWord)) return 0;
+	
+	if (!pchandler->set_framerate(framerate, featureWord)) return 0;
 
 	return 1;
 }
@@ -850,18 +892,22 @@ int IDL_STDCALL SetVimbaFrameRate(int argc, void* argv[])
 /*  Preview functions
 /*
 /*  - before while loop, to start asynchronous capturing
-/*  IDL>  x=call_external(dll,'StartVimbaPreview')
+/*  IDL>  x=call_external(dll,'StartVimbaPreview',0)
 /*
 /*  - inside while loop, to get current image
-/*  IDL>  x=call_external(dll,'GetVimbaPreview',img)
+/*  IDL>  x=call_external(dll,'GetVimbaPreview',0,img)
 /*
 /*  - inside while loop, to close asynchronous capturing
-/*  IDL>  x=call_external(dll,'StopVimbaPreview')
+/*  IDL>  x=call_external(dll,'StopVimbaPreview',0)
 /****************************************************************/
 
 int IDL_STDCALL StartVimbaPreview(int argc, void* argv[])
 {
-	if (!init_preview()) return 0;
+	auto num = getIDLShort(argv[0]);
+	if (!checkNumAvailable(num)) return 0;
+	auto pchandler = pCameraHandlers.at(num);
+	
+	if (!pchandler->init_preview()) return 0;
 
 	return 1;
 }
@@ -869,44 +915,54 @@ int IDL_STDCALL StartVimbaPreview(int argc, void* argv[])
 
 int IDL_STDCALL GetVimbaPreview(int argc, void* argv[])
 {
-	UINT16* idlBuffer = (UINT16 *)argv[0];
+	auto num = getIDLShort(argv[0]);
+	if (!checkNumAvailable(num)) return 0;
+	auto pchandler = pCameraHandlers.at(num);
 
-	pPreviewHandler->copy_image(idlBuffer);
+	UINT16* idlBuffer = (UINT16 *)argv[1];
+
+	pchandler->pPreviewHandler->copy_image(idlBuffer);
 
 	return 1;
 }
 
 int IDL_STDCALL StopVimbaPreview(int argc, void* argv[])
 {
-	if (!close_preview()) return 0;
+	auto num = getIDLShort(argv[0]);
+	if (!checkNumAvailable(num)) return 0;
+	auto pchandler = pCameraHandlers.at(num);
+
+	if (!pchandler->close_preview()) return 0;
 
 	return 1;
 }
 
 /****************************************************************/
 /*  camera grab image sequence (synchronously) with header
-/*  IDL>  x=call_external(dll,'VimbaObs', nimg, imgs, times, framerate, "AqcuisitionFrameRate")
+/*  IDL>  x=call_external(dll,'VimbaObs', 0, nimg, imgs, times, framerate, "AqcuisitionFrameRate")
 /****************************************************************/
 
 
 int IDL_STDCALL VimbaObs(int argc, void* argv[])
 {
-
+	auto num = getIDLShort(argv[0]);
+	if (!checkNumAvailable(num)) return 0;
+	auto pchandler = pCameraHandlers.at(num);
 	
-	UINT16 nFrame = (UINT16) *((UINT16*)argv[0]);
+	UINT16 nFrame = (UINT16) *((UINT16*)argv[1]);
 	//char message[100];
 	//sprintf_s(message, "nFrame=%u", nFrame);
 	//INFO::info(message);
 	
-	UINT16* idlBuffer = (UINT16*)argv[1];              // idl buffer for 3d image array
-	UINT16* idlBuffer_time = (UINT16*)argv[2];         // idl buffer for timestamp 2d array
-	float*  idlBuffer_framerate = (float *)argv[3];    // idl buffer for framerate 1d array
+	UINT16* idlBuffer = (UINT16*)argv[2];              // idl buffer for 3d image array
+	UINT16* idlBuffer_time = (UINT16*)argv[3];         // idl buffer for timestamp 2d array
+	float*  idlBuffer_framerate = (float *)argv[4];    // idl buffer for framerate 1d array
 
-	std::string featureWord = getIDLString(argv[4]);
+	std::string featureWord = getIDLString(argv[5]);
 	
 	//: acquire image
 	vimba::FramePtrVector pFrames(nFrame);
-	if (!grab_multiframe(pFrames)) return 0;
+	if (!pchandler->grab_multiframe(pFrames)) return 0;
 	//Vhida::pCamera->AcquireMultipleImages(pFrames,Vhida::Observation::TIMEOUT);
 
 	
@@ -915,7 +971,7 @@ int IDL_STDCALL VimbaObs(int argc, void* argv[])
 
 	// get framerate
 	double frate;
-	get_framerate(frate, featureWord);
+	pchandler->get_framerate(frate, featureWord);
 
 	int nTimeParam = 6;
 	//: copy memory data
@@ -957,45 +1013,82 @@ int IDL_STDCALL VimbaObs(int argc, void* argv[])
 
 }
 
-
 /****************************************************************/
 /*  camera grab image sequence (synchronously) with header
-/*  IDL>  x=call_external(dll,'VimbaSnap', img)
+/*  IDL>  x=call_external(dll,'VimbaObsAll', 2, nimg, imgs1, imgs2)
 /****************************************************************/
+int IDL_STDCALL VimbaObsAll(int argc, void* argv[])
+{
+	auto num = getIDLShort(argv[0]);
+	if (!checkNumAvailable(num)) return 0;
 
 
-int IDL_STDCALL VimbaSnap(int argc, void* argv[])
-{/*
-	UINT16* idlBuffer = (UINT16*)argv[0];              // idl buffer for 2d image array
+	UINT16 nFrame = (UINT16) *((UINT16*)argv[1]);
 
-	Vhida::vimba::FramePtr pframe;
-	Vhida::pCamera->AcquireSingleImage(pframe, Vhida::Observation::TIMEOUT);
+	std::vector<UINT16*> idlBufferVec(num);
+	std::vector<vimba::FramePtrVector> pFramesVector;
+	for (int i = 0; i < num; ++i)
+	{
+		UINT16* idlBuffer = (UINT16*)argv[i+1];  // idl buffer for 3d image array
+		idlBufferVec.push_back( idlBuffer );
 
-	VmbUint32_t imageSize;
-	pframe->GetImageSize(imageSize);
+		vimba::FramePtrVector pFrames(nFrame);
+		pFramesVector.push_back(pFrames);
+	}
 
-	VmbUchar_t* pimage;
-	pframe->GetImage(pimage);
+	//: start image acquisition for all cameras
+	for (int i = 0; i < num; i++)
+	{
+		auto pchandler = pCameraHandlers.at(i);
+		auto pFrames = pFramesVector.at(i);
+		//if (!pchandler->grab_multiframe( pFramesVector.at(i) )) return 0;
+		pchandler->grab_multiframe(pFrames);
+	}
 
-	// copy image memory
-	memcpy((void*)(idlBuffer), (void*)(pimage), imageSize);
-*/
+	//: copy memory
+	for (int i = 0; i < num; i++)
+	{
+		auto idlBuffer = idlBufferVec.at(i);
+		auto pFrames = pFramesVector.at(i);
+
+		//: get imageSize
+		VmbUint32_t imageSize;
+		pFrames.at(0)->GetImageSize(imageSize);
+
+		for (int i = 0; i < nFrame; ++i)
+		{
+			//: get image buffer
+			vimba::FramePtr frame = pFrames.at(i);
+			VmbUchar_t* pimage;
+			frame->GetImage(pimage);
+
+			//: copy image memory
+			//: dividing 2 for UINT16 -> byte
+			memcpy((void*)(idlBuffer + i * imageSize / 2), (void*)(pimage), imageSize);
+		}
+	}
+
 	return 1;
-	
 }
+
 
 /****************************************************************/
 /*  subregion
-/*  IDL>  x=call_external(dll,'VimbaRoi', regionX, regionY, width, height)
+/*  IDL>  x=call_external(dll,'VimbaRoi', 0, regionX, regionY, width, height)
 /****************************************************************/
 int IDL_STDCALL VimbaRoi(int argc, void* argv[])
 {
+
+	auto num = getIDLShort(argv[0]);
+	if (!checkNumAvailable(num)) return 0;
+	auto pchandler = pCameraHandlers.at(num);
+
 	using idl_int_t = INT32;
 
-	idl_int_t regionX = *((idl_int_t*)argv[0]);
-	idl_int_t regionY = *((idl_int_t*)argv[1]);
-	idl_int_t width   = *((idl_int_t*)argv[2]);
-	idl_int_t height  = *((idl_int_t*)argv[3]);
+	idl_int_t regionX = *((idl_int_t*)argv[1]);
+	idl_int_t regionY = *((idl_int_t*)argv[2]);
+	idl_int_t width   = *((idl_int_t*)argv[3]);
+	idl_int_t height  = *((idl_int_t*)argv[4]);
 
 	if (false) {
 		char message[100];
@@ -1004,13 +1097,13 @@ int IDL_STDCALL VimbaRoi(int argc, void* argv[])
 	}
 	
 
-	if (!set_roi(regionX, regionY, width, height))
+	if (!pchandler->set_roi(regionX, regionY, width, height))
 	{
 		INFO::error("failed to set roi in vimba");
 		return 0;
 	}
 
-	if (!init_preview_handler())
+	if (!pchandler->init_preview_handler())
 	{
 		INFO::error("failed to re-init preview handler");
 		return 0;
@@ -1021,23 +1114,27 @@ int IDL_STDCALL VimbaRoi(int argc, void* argv[])
 
 /****************************************************************/
 /*  subregion
-/*  IDL>  x=call_external(dll,'VimbaBin', binx, biny)
+/*  IDL>  x=call_external(dll,'VimbaBin', 0, binx, biny)
 /****************************************************************/
 
 int IDL_STDCALL VimbaBin(int argc, void* argv[])
 {
+	auto num = getIDLShort(argv[0]);
+	if (!checkNumAvailable(num)) return 0;
+	auto pchandler = pCameraHandlers.at(num);
+
 	using idl_int_t = INT16;
 
 	idl_int_t binx = *((idl_int_t*)argv[0]);
 	idl_int_t biny = *((idl_int_t*)argv[1]);
 
-	if (!set_bin(binx, biny))
+	if (!pchandler->set_bin(binx, biny))
 	{
 		INFO::error("failed to change binnding in vimba");
 		return 0;
 	}
 
-	if (!init_preview_handler())
+	if (!pchandler->init_preview_handler())
 	{
 		INFO::error("failed to re-init preview handler");
 		return 0;
