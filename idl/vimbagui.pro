@@ -45,9 +45,10 @@ pro vimbagui_event, ev
 
   widget_control, ev.id, get_uvalue=value
   ;;dbin=640./wdp.p.wx/p.bin
-  dbin=p.WinResize/p.bin
-  x0=p.regionx/dbin
-  y0=p.regiony/dbin
+  dbinx=p.WinResize/p.binx
+  dbiny=p.WinResize/p.biny
+  x0=p.regionx/dbinx
+  y0=p.regiony/dbiny
   hpos=float([x0,y0,x0,y0])/wdp.p.wx+[0.05,0.05,0.2,0.17]
 
   if n_elements(wdid_p) eq 0 then evid_p=wdevid(wdp)
@@ -65,13 +66,13 @@ pro vimbagui_event, ev
 	      print,'click cut position'
 	      cursor,x,y,/dev
 	      if o.cut eq 0 then begin
-		      draw,[0,p.Width/dbin],y*[1,1] 
+		      draw,[0,p.Width/dbinx],y*[1,1] 
 		      o.pos=y
-		      window,1,xs=p.Width/dbin,ys=o.nimg
+		      window,1,xs=p.Width/dbinx,ys=o.nimg
 	      endif else begin
-		      draw,x*[1,1],[0,p.Height/dbin]
+		      draw,x*[1,1],[0,p.Height/dbiny]
 		      o.pos=x
-		      window,1,xs=o.nimg,ys=p.Height/dbin
+		      window,1,xs=o.nimg,ys=p.Height/dbiny
 	      endelse
 	    print,'pos=',o.pos
       wset,0
@@ -88,7 +89,7 @@ pro vimbagui_event, ev
       img1=vimba_obs(nimg=1) ;;TODO: should we acquire time_arr and frate_arr in SNAP?
       p.date_obs2=get_systime()
 
-      img=rebin(img1,p.Width/dbin,p.Height/dbin)>0
+      img=rebin(img1,p.Width/dbinx,p.Height/dbiny)>0
       dmin=wdp.p.min
       dmax=wdp.p.max
       if wdp.p.log_on then begin
@@ -97,7 +98,7 @@ pro vimbagui_event, ev
         dmax=alog10(dmax>1)
       endif
       img=wdp.p.AUTOSCL_ON?bytscl(img):bytscl(img,min=dmin,max=dmax)
-      tv,img,p.regionx/dbin,p.regiony/dbin
+      tv,img,p.regionx/dbinx,p.regiony/dbiny
       o.filename=o.fnam+ctime
       widget_control,wd.FILENAME,set_value=o.filename
     end
@@ -117,7 +118,7 @@ pro vimbagui_event, ev
       imgs=vimba_obs(nimg=o.nimg,time_arr=tim,frate_arr=fra)
       p.date_obs2=get_systime(ctime=ctime)
       img1=imgs[*,*,o.nimg-1]
-      img=rebin(img1,p.Width/dbin,p.Height/dbin)>0
+      img=rebin(img1,p.Width/dbinx,p.Height/dbiny)>0
       dmin=wdp.p.min
       dmax=wdp.p.max
       if wdp.p.log_on then begin
@@ -126,13 +127,13 @@ pro vimbagui_event, ev
         dmax=alog10(dmax>1)
       endif
       img=wdp.p.AUTOSCL_ON?bytscl(img):bytscl(img,min=dmin,max=dmax)
-      tv,img,p.regionx/dbin,p.regiony/dbin
+      tv,img,p.regionx/dbinx,p.regiony/dbiny
       if o.scanmap then begin
   	    wset,1
 	      if o.cut eq 0 then $		
-		      tvscl,reform(rebin(imgs[*,o.pos,*],p.Width/dbin,1,o.nimg),p.Width/dbin,o.nimg) ; x-cut
+		      tvscl,reform(rebin(imgs[*,o.pos,*],p.Width/dbinx,1,o.nimg),p.Width/dbiny,o.nimg) ; x-cut
  	      if o.cut eq 1 then $
-		      tvscl,transpose(reform(rebin(imgs[o.pos,*,*],1,p.Height/dbin,o.nimg),p.Height/dbin,o.nimg)) ; y-cut
+		      tvscl,transpose(reform(rebin(imgs[o.pos,*,*],1,p.Height/dbinx,o.nimg),p.Height/dbiny,o.nimg)) ; y-cut
 	      wset,0
       endif
       o.filename=o.fnam+ctime
@@ -148,9 +149,9 @@ pro vimbagui_event, ev
       profiles,rebin(img1,wdp.p.wx,wdp.p.wy)
     end
     wd.REV: begin
-      imgss=bytarr(p.Width/dbin,p.Height/dbin,o.nimg)
+      imgss=bytarr(p.Width/dbinx,p.Height/dbiny,o.nimg)
       for i=0,o.nimg-1 do begin
-        img=rebin(imgs[*,*,i],p.Width/dbin,p.Height/dbin)>0
+        img=rebin(imgs[*,*,i],p.Width/dbinx,p.Height/dbiny)>0
         dmin=wdp.p.min
         dmax=wdp.p.max
         if wdp.p.log_on then begin
@@ -159,7 +160,7 @@ pro vimbagui_event, ev
           dmax=alog10(dmax>1)
         endif
         img=wdp.p.AUTOSCL_ON?bytscl(img):bytscl(img,min=dmin,max=dmax)
-        tv,img,p.regionx/dbin,p.regiony/dbin
+        tv,img,p.regionx/dbinx,p.regiony/dbiny
         xyouts,10,10,string(i,form='(i4.0)'),/dev
 	      imgss[*,*,i]=img
       endfor
@@ -179,7 +180,8 @@ pro vimbagui_event, ev
       outfile=o.outdir+o.filename+'.fits'
       ;;savefits_p,imgs,p,file=outfile
       ;;cwritefits_p,imgs,p,file=outfile,dst_status=dstst,s4pos=s4pos, rotp=18000.0/q.m1.vm,/threading
-      cwritefits_p,imgs,p,file=outfile,/threading ;; need dst_status, time_arr, frate_arr
+      ;;cwritefits_p,imgs,p,file=outfile,/threading ;; need dst_status, time_arr, frate_arr
+      mwritefits_p,imgs,p,file=outfile,/binxy
       print,'saved to '+outfile
     end
     wd.OBS_START: begin
@@ -210,7 +212,7 @@ pro vimbagui_event, ev
         imgs=vimba_obs(nimg=o.nimg,time_arr=tim,frate_arr=fra)
         p.date_obs2=get_systime(ctime=ctime)
         img1=imgs[*,*,o.nimg-1]
-        img=rebin(img1,p.Width/dbin,p.Height/dbin)>0
+        img=rebin(img1,p.Width/dbinx,p.Height/dbiny)>0
         dmin=wdp.p.min
         dmax=wdp.p.max
         if wdp.p.log_on then begin
@@ -219,7 +221,7 @@ pro vimbagui_event, ev
           dmax=alog10(dmax>1)
         endif
         img=wdp.p.AUTOSCL_ON?bytscl(img):bytscl(img,min=dmin,max=dmax)
-        tv,img,p.regionx/dbin,p.regiony/dbin
+        tv,img,p.regionx/dbinx,p.regiony/dbiny
         if wdp.p.hist_on then begin
           h=histogram(img1,max=imax,min=0,nbins=nbins)
           plot,ii,h,psym=10, $
@@ -227,24 +229,25 @@ pro vimbagui_event, ev
         endif
         if wdp.p.mmm_on then begin
           mmm=uint([min(img1,max=max),mean(img1),max])
-          xyouts,p.regionx/dbin,(p.regiony+p.Height)/dbin,/dev,'!C'+strjoin(['MIN ','MEAN','MAX ']+' '+string(mmm),'!C'),color=127
+          xyouts,p.regionx/dbinx,(p.regiony+p.Height)/dbiny,/dev,'!C'+strjoin(['MIN ','MEAN','MAX ']+' '+string(mmm),'!C'),color=127
         endif
         if o.scanmap then begin
   	      wset,1
 	        if o.cut eq 0 then $		
-		        tvscl,reform(rebin(imgs[*,o.pos,*],p.Width/dbin,1,o.nimg),p.Width/dbin,o.nimg) ; x-cut
+		        tvscl,reform(rebin(imgs[*,o.pos,*],p.Width/dbinx,1,o.nimg),p.Width/dbinx,o.nimg) ; x-cut
  	        if o.cut eq 1 then $
-		        tvscl,transpose(reform(rebin(imgs[o.pos,*,*],1,p.Height/dbin,o.nimg),p.Height/dbin,o.nimg)) ; y-cut
+		        tvscl,transpose(reform(rebin(imgs[o.pos,*,*],1,p.Height/dbiny,o.nimg),p.Height/dbiny,o.nimg)) ; y-cut
 	        wset,0
         endif
 
         o.filename=o.fnam+ctime
         widget_control,wd.FILENAME,set_value=o.filename
         outfile=o.outdir+o.filename+'.fits'
-        xyouts,x0+100,y0+p.Height/dbin-30,string(lcount,form='(i5)')+'  '+outfile,/dev
+        xyouts,x0+100,y0+p.Height/dbiny-30,string(lcount,form='(i5)')+'  '+outfile,/dev
         ;savefits_p,imgs,p,file=outfile
         ;;cwritefits_p,imgs,p,file=outfile,dst_status=dstst,s4pos=s4pos, rotp=18000.0/q.m1.vm,/threading
-        cwritefits_p,imgs,p,file=outfile,/threading ;; need dst_status, time_arr, frate_arr
+        ;cwritefits_p,imgs,p,file=outfile,/threading ;; need dst_status, time_arr, frate_arr
+        mwritefits_p,imgs,p,file=outfile,/binxy
 	      print,'-> ',outfile
         lcount=lcount+1
         msec0=msec
@@ -292,16 +295,20 @@ pro vimbagui_event, ev
       widget_control,wd.NIMG,set_value=string(o.nimg,form='(i4)')
       RegionX=fits_keyval(fh,'X0',/fix)
       RegionY=fits_keyval(fh,'Y0',/fix)
-      bin=fits_keyval(fh,'BIN',/fix)
+      binx=fits_keyval(fh,'BINX',/fix)
+      biny=fits_keyval(fh,'BINY',/fix)
       Width=nx
       Height=ny
-      p=vimba_setParam(bin=bin)
+      p=vimba_setParam(binx=binx,biny=biny)
       p=vimba_setParam(regionx=RegionX,regiony=RegionY,width=Width,height=Height)
       set_wdroi,wdp,p
-      widget_control,wdp.BIN,set_value=string(p.bin,form='(i2)')
+      widget_control,wdp.BINX,set_value=string(p.binx,form='(i2)')
+      widget_control,wdp.BINY,set_value=string(p.biny,form='(i2)')
       widget_control,wd.NIMG,set_value=string(o.nimg,form='(i4)')
       ; help,p,/st
-      dbin=2048./wdp.p.wx/p.bin
+      ;;dbin=2048./wdp.p.wx/p.bin
+      dbinx=p.WinResize/p.binx
+      dbiny=p.WinResize/p.biny
     end
     wd.Exit: begin
       WIDGET_CONTROL, /destroy, ev.top
@@ -435,7 +442,7 @@ o={vimba_obs_v01, $  ; obs. control params
   polarity: 0,  $ ; 0: negative, 1: positive
   date:     '',   $
   outdir:   '',   $
-  fnam:     'vimba', $
+  fnam:     'vimba_', $
   filename: ''  $
 }
 

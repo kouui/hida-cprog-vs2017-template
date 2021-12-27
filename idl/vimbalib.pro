@@ -37,6 +37,7 @@ function init_camera_size, p1, camera_type
         p1.WidthMax =1600l
         p1.HeightMax=1200l
         p1.WinResize=2
+        p1.PreviewWait=0.03
 		  end
       'goldeye' : begin
         p1.Width =640l
@@ -44,6 +45,7 @@ function init_camera_size, p1, camera_type
         p1.WidthMax =640l
         p1.HeightMax=512l
         p1.WinResize=1
+        p1.PreviewWait=0.02
 		  end
       else : throw_error, "undefined camera_type="+camera_type
     endcase
@@ -53,7 +55,8 @@ end
 
 function regular_image_format, p1
 
-  bin = p1.bin
+  binx = p1.binx
+  biny = p1.biny
 
   regionx = p1.regionx
   regiony = p1.regiony
@@ -65,25 +68,25 @@ function regular_image_format, p1
   
   if (1) then begin
     ;; regular offset
-    if (regionx ge widthMax/bin) then begin
+    if (regionx ge widthMax/binx) then begin
       regionx = 0
-      print, "regionx >= widthMax/bin, set to 0"
+      print, "regionx >= widthMax/binx, set to 0"
     endif
 
-    if (regiony ge heightMax/bin) then begin
+    if (regiony ge heightMax/biny) then begin
       regiony = 0
-      print, "regiony >= heightMax/bin, set to 0"
+      print, "regiony >= heightMax/biny, set to 0"
     endif
 
     ;; regular width and height
-    if (width gt (widthMax/bin-regionx)) then begin
-      width = widthMax/bin-regionx
-      print, "width ge (widthMax/bin-region), set to (widthMax/bin-region)"
+    if (width gt (widthMax/binx-regionx)) then begin
+      width = widthMax/binx-regionx
+      print, "width ge (widthMax/binx-region), set to (widthMax/binx-region)"
     endif
 
-    if (height gt (heightMax/bin-regiony)) then begin
-      height = heightMax/bin - RegionY
-      print, "height ge (heightMax/bin-regiony), set to (heightMax/bin-regiony)"
+    if (height gt (heightMax/biny-regiony)) then begin
+      height = heightMax/biny - RegionY
+      print, "height ge (heightMax/biny-regiony), set to (heightMax/biny-regiony)"
     endif
   endif
 
@@ -136,6 +139,9 @@ function p_vimba
     timelo:      0,            $   ; Time stamp, lower 32-bits
     timehi:      0,            $   ; Time stamp, upper 32-bits
     status:      0,            $   ; Status
+    binx  :      1,            $   ; binning X 1-4
+    biny  :      1,            $   ; binning Y 1-4
+    PreviewWait: 0.03,         $   ; preview waiting time
     WinResize:   1             $   ; factor to resize display window
   }
 
@@ -159,7 +165,7 @@ function vimba_init,camera_type,cameraID,xmlFile,noDev=noDev0
   p=p_vimba()
   p=init_camera_size(p, camera_type)
   img=uintarr(p.width,p.height)
-  print, size(img)
+  ;print, size(img)
 
   imgss=[0l,0l,0l] ;; size of imgs
 
@@ -179,7 +185,7 @@ end
 
 ;**************************************************************
 ; 
-function vimba_setParam,expo=expo,gain=gain,bin=bin, $
+function vimba_setParam,expo=expo,gain=gain,binx=binx,biny=biny, $
   width=width,height=height,regionx=regionx,regiony=regiony, $
   framerate=framerate
 
@@ -211,11 +217,19 @@ function vimba_setParam,expo=expo,gain=gain,bin=bin, $
     p.framerate = frate
   endif
   
-  ;revise binnig?
-  if isvalid(bin) then begin
-    revbin=bin ne p.bin
-    revbin=1b
-  endif else revbin=0b
+  ;revise binnig x?
+  if isvalid(binx) then begin
+    revbinx=binx ne p.binx
+    revbinx=1b
+  endif else revbinx=0b
+
+  ;revise binnig y?
+  if isvalid(biny) then begin
+    revbiny=biny ne p.biny
+    revbiny=1b
+  endif else revbiny=0b
+
+  revbin = revbinx or revbiny
 
   ;revise subarray?
   revsub=0b
@@ -241,34 +255,29 @@ function vimba_setParam,expo=expo,gain=gain,bin=bin, $
     
     p=regular_image_format(p)
 
-    if ~noDev then begin
-      err=call_external(vimbadll,'VimbaRoi', p.RegionX, p.RegionY, p.Width, p.Height)
-      ;;ret=call_external(orcadll,'SetOrcaBin',p.bin,/all_value,/cdecl)
-
-      ;;r=call_external(orcadll,'QuerySubArray')
-      ;;if r eq 1 then r=call_external(orcadll,'EnableSubArray')
-
-      ;;r=call_external(orcadll,'SetSubArray',0l,0l,long(p.Width*p.bin),long(p.Height*p.bin))
-      ;;r=call_external(orcadll,'SetSubArray',long(p.RegionX*p.bin),long(p.RegionY*p.bin),long(p.Width*p.bin),long(p.Height*p.bin))
-
-      ;;full=p.RegionX eq 0 and p.RegionY eq 0 and p.Width*p.bin eq 2048 and p.Height*p.bin eq 2048
-      ;;if full then r=call_external(orcadll,'DisableSubArray')
-    endif
+    if ~noDev then err=call_external(vimbadll,'VimbaRoi', p.RegionX, p.RegionY, p.Width, p.Height)
   endif
 
   ;only bin revised
   if revbin and ~revsub then begin
     
-    ;;:reset image format
-    if (bin gt p.bin) then begin
-      p.RegionX = 0l
-      p.RegionY = 0l
-      p.Width = p.WidthMax / bin
-      p.Height = p.HeightMax / bin
+    if (revbinx) then begin
+      if (binx gt p.binx) then begin
+        p.RegionX = 0l
+        p.Width = p.WidthMax / binx
+      endif
+      p.binx=binx
     endif
 
-    p.bin=bin
-    err=call_external(vimbadll,'VimbaBin', p.bin, p.bin)
+    if (revbiny) then begin
+      if (biny gt p.biny) then begin
+        p.RegionY = 0l
+        p.Height = p.HeightMax / biny
+      endif
+      p.biny=biny
+    endif
+    
+    if ~noDev then err=call_external(vimbadll,'VimbaBin', p.binx, p.biny)
   endif
   
   ;; revise array size
@@ -471,15 +480,16 @@ pro vimba_handle, ev, wd, p0, img1
   p = p0
   ;--
 
-  dbin=p.WinResize/p.bin
+  dbinx=p.WinResize/p.binx
+  dbiny=p.WinResize/p.biny
 
   case (ev.id) of
     wd.PRV_START: begin
       
       nbins=128 & imax=2l^16 -1
       ii=findgen(nbins)/nbins*imax
-      x0=p.regionx/dbin
-      y0=p.regiony/dbin
+      x0=p.regionx/dbinx
+      y0=p.regiony/dbiny
 
       ;flir_trigmode,'Internal'
 
@@ -487,11 +497,11 @@ pro vimba_handle, ev, wd, p0, img1
       vimba_startPreview
 
       set_plot,'z'
-      device,set_resolution=[p.Width,p.Height]/dbin
+      device,set_resolution=[p.Width,p.Height]/[dbinx,dbiny]
       set_plot,'win'
       ;; clear background
       img_bg = uintarr(wd.p.wx,wd.p.wy)
-      tvscl, img_bg
+      tv, img_bg
 
       while ev.id ne wd.PRV_STOP do begin
         ;img1=orca_getimg(nimg=1) ;,/nowait)
@@ -499,9 +509,11 @@ pro vimba_handle, ev, wd, p0, img1
         
         ;;img1=vimba_snap()
         img1=vimba_getPreview()
+        print, "minmax(img1) = ", minmax(img1)
+        wait, p.PreviewWait
         ;continue
 
-        img2=rebin(img1,p.Width/dbin,p.Height/dbin)>0
+        img2=rebin(img1,p.Width/dbinx,p.Height/dbiny)>0
         dmin=wd.p.min
         dmax=wd.p.max
         if wd.p.log_on then begin
@@ -524,7 +536,7 @@ pro vimba_handle, ev, wd, p0, img1
         endif
         tmp=tvrd()
         set_plot,'win'
-        tvscl,tmp,p.regionx/dbin,p.regiony/dbin
+        tvscl,tmp,p.regionx/dbinx,p.regiony/dbiny
 
         ev = widget_event(wd.PRV_STOP,/nowait)
       endwhile
@@ -569,11 +581,19 @@ pro vimba_handle, ev, wd, p0, img1
       ;;print, "GAIN is fixed to its configuration value (GAIN1)"
     ;;end
 
-    wd.BIN: begin
-      bin=fix(gt_wdtxt(ev.id))
-      ;;dbin=2048./wd.p.wx/p.bin
-      ;p=OrcaSetParam(bin=p.bin)
-      p=vimba_setParam(bin=bin)
+    ;;wd.BIN: begin
+    ;;  bin=fix(gt_wdtxt(ev.id))
+    ;;  p=vimba_setParam(bin=bin)
+    ;;  set_wdroi,wd,p
+    ;;end
+    wd.BINX: begin
+      binx=fix(gt_wdtxt(ev.id))
+      p=vimba_setParam(binx=binx)
+      set_wdroi,wd,p
+    end
+    wd.BINY: begin
+      biny=fix(gt_wdtxt(ev.id))
+      p=vimba_setParam(biny=biny)
       set_wdroi,wd,p
     end
     wd.X0: begin
@@ -607,7 +627,7 @@ pro vimba_handle, ev, wd, p0, img1
       ;;set_wdroi,wd,p
     end
     wd.FULL: begin
-      p=vimba_setParam(regionx=0,regiony=0,width=p.WidthMax/p.bin,height=p.heightMax/p.bin)
+      p=vimba_setParam(regionx=0,regiony=0,width=p.WidthMax/p.binx,height=p.heightMax/p.biny)
       set_wdroi,wd,p
     end
     wd.AUTOSCL:begin
@@ -640,7 +660,7 @@ function vimba_widget,base,p
       wx:   	p.WidthMax/p.winResize,   	$ ; window x-size for image display
       wy:   	p.HeightMax/p.winResize,   	$ ;        y-size
       hist_on:  1,  	$ ; histgram on/off
-      mmm_on:  	1, 	$ min/mean/max on/off
+      mmm_on:  	1, 	$ ;min/mean/max on/off
       autoscl_on:  1, 	$ ; use TVSCL or TV
       log_on:  	0, 	$ ;log display
       min:  	0l,   	$ ;display min
@@ -654,7 +674,9 @@ function vimba_widget,base,p
     NUC_INTVAL:   0l, $
     GAIN:  0l,   $
     TEMP:  0l,   $
-    BIN:    0l, $
+    ;;BIN:    0l, $
+    BINX:    0l, $
+    BINY:    0l, $
     X0:   0l, $
     Y0:   0l, $
     WIDTH:    0l, $
@@ -701,8 +723,12 @@ function vimba_widget,base,p
   dmy = widget_label(b22, value='ROI: ')
   wd.FULL=widget_button(b22, value="full", uvalue = "FULL")
   ;;wd.CBOX=widget_button(b22, value="Cbox", uvalue = "CBOX")
-  dmy = widget_label(b22, value='   bin:')
-  wd.BIN = widget_text(b22,value=string(p.bin,form='(i2)'), xsize=2, uvalue='BIN',/edit)
+  ;;dmy = widget_label(b22, value='   bin:')
+  ;;wd.BIN = widget_text(b22,value=string(p.bin,form='(i2)'), xsize=2, uvalue='BIN',/edit)
+  dmy = widget_label(b22, value='   bin-x:')
+  wd.BINX = widget_text(b22,value=string(p.binx,form='(i2)'), xsize=2, uvalue='BINX',/edit)
+  dmy = widget_label(b22, value=' -y:')
+  wd.BINY = widget_text(b22,value=string(p.biny,form='(i2)'), xsize=2, uvalue='BINY',/edit)
   widget_control,widget_info(wd.FULL,/parent),sensitive=1
 
   b23=widget_base(b2, /row)
