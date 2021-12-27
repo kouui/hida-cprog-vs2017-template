@@ -1,5 +1,5 @@
 ; vimbagui.pro
-@vimbalib
+@vimbamultilib
 
 ;**************************************************************
 function version
@@ -421,7 +421,9 @@ common vimbagui, wd, wdp, evid_p, o, p, img1, imgs, tim, tem
 
 xmlFile="Z:\\Projects\\conf\\Vimba\\prosilica.000F3101ABD0.20211225.xml"
 cameraID = 'DEV_000F3101ABD0'
-p=vimba_init("prosilica",cameraId,xmlFile);,/noDev)
+;;xmlFile="Z:\\Projects\\conf\\Vimba\\prosilica.000F31018CED.20211227.xml"
+;;cameraID = 'DEV_000F31018CED'
+p=vimba_init(0,"prosilica",cameraId,xmlFile);,/noDev)
 p=vimba_setParam(expo=0.015)
 
 ;-----  prepare object array for parallel processing -----------

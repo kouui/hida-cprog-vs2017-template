@@ -142,6 +142,7 @@ function p_vimba
     binx  :      1,            $   ; binning X 1-4
     biny  :      1,            $   ; binning Y 1-4
     PreviewWait: 0.03,         $   ; preview waiting time
+    CameraNo: 0,               $   ; No. of camera
     WinResize:   1             $   ; factor to resize display window
   }
 
@@ -149,20 +150,21 @@ function p_vimba
 end
 
 ;**************************************************************
-function vimba_init,camera_type,cameraID,xmlFile,noDev=noDev0
+function vimba_init,cameraNo,camera_type,cameraID,xmlFile,noDev=noDev0
 
   common vimba,vimbadll,p,img,noDev,imgs,imgss,features
   
   features=struct_feature(camera_type)
 
-  vimbadll='Z:\Projects\cprog\VS2017\VimbaIDL\x64\Debug\VimbaIDL.dll'
+  vimbadll='Z:\Projects\cprog\VS2017\VimbaIDLMulti\x64\Debug\VimbaIDL.dll'
   if keyword_set(noDev0) then noDev=1 else noDev=0
   if not noDev then begin
     err = call_external(vimbadll,'VimbaInit')
-    err = call_external(vimbadll,'VimbaInitCamera', cameraID, xmlFile)
+    err = call_external(vimbadll,'VimbaInitCamera', cameraNo, cameraID, xmlFile)
   endif 
 
   p=p_vimba()
+  p.CameraNo=cameraNo
   p=init_camera_size(p, camera_type)
   img=uintarr(p.width,p.height)
   ;print, size(img)
@@ -201,7 +203,7 @@ function vimba_setParam,expo=expo,gain=gain,binx=binx,biny=biny, $
   endif else revexpo = 0b
   if revexpo then begin
     expo_mili = expo * 1000.0
-    if not noDev then ret = call_external(vimbadll, 'SetVimbaExpoTime', [expo_mili], features.exposure)
+    if not noDev then ret = call_external(vimbadll, 'SetVimbaExpoTime', p.CameraNo, [expo_mili], features.exposure)
     p.expo = expo
   endif
 
@@ -213,7 +215,7 @@ function vimba_setParam,expo=expo,gain=gain,binx=binx,biny=biny, $
   endif else revfrate = 0b
   if revfrate then begin
     frate = float(framerate)
-    if not noDev then ret = call_external(vimbadll, 'SetVimbaFrameRate', [frate], features.framerate)
+    if not noDev then ret = call_external(vimbadll, 'SetVimbaFrameRate',p.CameraNo, [frate], features.framerate)
     p.framerate = frate
   endif
   
@@ -255,7 +257,7 @@ function vimba_setParam,expo=expo,gain=gain,binx=binx,biny=biny, $
     
     p=regular_image_format(p)
 
-    if ~noDev then err=call_external(vimbadll,'VimbaRoi', p.RegionX, p.RegionY, p.Width, p.Height)
+    if ~noDev then err=call_external(vimbadll,'VimbaRoi', p.CameraNo, p.RegionX, p.RegionY, p.Width, p.Height)
   endif
 
   ;only bin revised
@@ -277,7 +279,7 @@ function vimba_setParam,expo=expo,gain=gain,binx=binx,biny=biny, $
       p.biny=biny
     endif
     
-    if ~noDev then err=call_external(vimbadll,'VimbaBin', p.binx, p.biny)
+    if ~noDev then err=call_external(vimbadll,'VimbaBin', p.CameraNo, p.binx, p.biny)
   endif
   
   ;; revise array size
@@ -305,7 +307,7 @@ end
 pro vimba_startPreview
 
   common vimba,vimbadll,p,img,noDev,imgs,imgss
-  if not noDev then ret = call_external(vimbadll, 'StartVimbaPreview')
+  if not noDev then ret = call_external(vimbadll, 'StartVimbaPreview', p.CameraNo)
 
 end
 
@@ -314,7 +316,7 @@ end
 pro vimba_stopPreview
 
   common vimba,vimbadll,p,img,noDev,imgs,imgss
-  if not noDev then ret = call_external(vimbadll, 'StopVimbaPreview')
+  if not noDev then ret = call_external(vimbadll, 'StopVimbaPreview', p.CameraNo)
 
 end
 
@@ -323,7 +325,7 @@ function vimba_getPreview
 
   common vimba,vimbadll,p,img,noDev,imgs,imgss
   if not noDev then begin
-    ret = call_external(vimbadll, 'GetVimbaPreview', img)
+    ret = call_external(vimbadll, 'GetVimbaPreview', p.CameraNo, img)
   endif
   
   return, img
@@ -331,15 +333,15 @@ end
 
 ;**************************************************************
 ;[no use]
-function vimba_snap
-
-  common vimba,vimbadll,p,img,noDev,imgs,imgss
-  if not noDev then begin
-    ret = call_external(vimbadll, 'VimbaSnap', img)
-  endif
-  
-  return, img
-end
+;;function vimba_snap
+;;
+;;  common vimba,vimbadll,p,img,noDev,imgs,imgss
+;;  if not noDev then begin
+;;    ret = call_external(vimbadll, 'VimbaSnap', img)
+;;  endif
+;;  
+;;  return, img
+;;end
 
 ;**************************************************************
 function vimba_obs, nimg=nimg, time_arr=time_arr, frate_arr=frate_arr
@@ -354,7 +356,7 @@ function vimba_obs, nimg=nimg, time_arr=time_arr, frate_arr=frate_arr
 
   imgs=uintarr(p.width,p.height,nimg)
   if not noDev then begin
-    ret = call_external(vimbadll, 'VimbaObs', nimg, imgs, time_arr, frate_arr,features)
+    ret = call_external(vimbadll, 'VimbaObs', p.CameraNo, nimg, imgs, time_arr, frate_arr,features)
   endif
   imgss = [p.width,p.height,nimg]
 

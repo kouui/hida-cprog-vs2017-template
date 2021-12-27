@@ -72,6 +72,19 @@ std::atomic<bool> flag_sys = false;
 
 VmbUint32_t TIMEOUT = 20 * 1000; //: 20 [sec]
 
+bool checkSuccess(VmbErrorType err, const char * text)
+{
+	if (err != VmbErrorSuccess) {
+
+		std::string fullText("Failed in : ");
+		fullText += std::string(text);
+
+		INFO::error(fullText.c_str());
+		return false;
+	}
+	return true;
+}
+
 int init_sys()
 {
 	if (!checkSuccess(sys.Startup(), "init VimbaSystem")) return 0;
@@ -93,19 +106,6 @@ int close_sys()
 	//delete pPreviewHandler;
 
 	return 1;
-}
-
-bool checkSuccess(VmbErrorType err, const char * text)
-{
-	if (err != VmbErrorSuccess) {
-
-		std::string fullText("Failed in : ");
-		fullText += std::string(text);
-
-		INFO::error(fullText.c_str());
-		return false;
-	}
-	return true;
 }
 
 VmbUint32_t get_image_size(const vimba::CameraPtr tmp_pcamera)
@@ -507,6 +507,12 @@ public:
 		vimba::FeaturePtr pFeature;
 		INT64 currentx, currenty;
 
+		if (false) {
+			char message[100];
+			sprintf_s(message, "trying to set binning binx=%d biny=%d", binx, biny);
+			INFO::info(message);
+		}
+
 		if (!checkSuccess(pCamera->GetFeatureByName("BinningHorizontal", pFeature), "get BinningHorizontal feature")) return 0;
 		pFeature->GetValue(currentx);
 		if (currentx != (INT64)binx)
@@ -717,10 +723,10 @@ INT16 getIDLShort(const void* argv)
 
 int checkCameraHandlersLength(int num)
 {
-	if (pCameraHandlers.size != num)
+	if (pCameraHandlers.size() != (UINT64)num)
 	{
 		char message[100];
-		sprintf_s(message, "the camera to init is number %d [starting from 0], but already has %d CameraHandlers", num, pCameraHandlers.size);
+		sprintf_s(message, "the camera to init is number %d [starting from 0], but already has %llu CameraHandlers", num, pCameraHandlers.size());
 		INFO::error(message);
 
 		return 0;
@@ -731,10 +737,10 @@ int checkCameraHandlersLength(int num)
 
 int checkNumAvailable(int num)
 {
-	if (num + 1 > pCameraHandlers.size)
+	if (num + 1 > pCameraHandlers.size())
 	{
 		char message[100];
-		sprintf_s(message, "camera number %d with %d cameras initialized", num, pCameraHandlers.size);
+		sprintf_s(message, "camera number %d with %llu cameras initialized", num, pCameraHandlers.size());
 		INFO::error(message);
 		return 0;
 	}
@@ -1125,12 +1131,12 @@ int IDL_STDCALL VimbaBin(int argc, void* argv[])
 
 	using idl_int_t = INT16;
 
-	idl_int_t binx = *((idl_int_t*)argv[0]);
-	idl_int_t biny = *((idl_int_t*)argv[1]);
+	idl_int_t binx = *((idl_int_t*)argv[1]);
+	idl_int_t biny = *((idl_int_t*)argv[2]);
 
 	if (!pchandler->set_bin(binx, biny))
 	{
-		INFO::error("failed to change binnding in vimba");
+		INFO::error("failed to change binning in vimba");
 		return 0;
 	}
 
