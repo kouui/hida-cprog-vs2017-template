@@ -509,7 +509,7 @@ pro vimba_handle, ev, wd, p0, img1
         
         ;;img1=vimba_snap()
         img1=vimba_getPreview()
-        print, "minmax(img1) = ", minmax(img1)
+        ;;print, "minmax(img1) = ", minmax(img1)
         wait, p.PreviewWait
         ;continue
 
