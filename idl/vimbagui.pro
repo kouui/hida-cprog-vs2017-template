@@ -421,6 +421,8 @@ common vimbagui, wd, wdp, evid_p, o, p, img1, imgs, tim, tem
 
 xmlFile="Z:\\Projects\\conf\\Vimba\\prosilica.000F3101ABD0.20211225.xml"
 cameraID = 'DEV_000F3101ABD0'
+;;xmlFile="Z:\\Projects\\conf\\Vimba\\prosilica.000F31018CED.20211227.xml"
+;;cameraID = 'DEV_000F31018CED'
 p=vimba_init("prosilica",cameraId,xmlFile);,/noDev)
 p=vimba_setParam(expo=0.015)
 
