@@ -44,7 +44,8 @@ pro vimbagui_event, ev
   ; p - VIMBA control parameters
 
   widget_control, ev.id, get_uvalue=value
-  dbin=640./wdp.p.wx/p.bin
+  ;;dbin=640./wdp.p.wx/p.bin
+  dbin=p.WinResize/p.bin
   x0=p.regionx/dbin
   y0=p.regiony/dbin
   hpos=float([x0,y0,x0,y0])/wdp.p.wx+[0.05,0.05,0.2,0.17]
@@ -411,8 +412,9 @@ common vimbagui, wd, wdp, evid_p, o, p, img1, imgs, tim, tem
 ; o - obs control parameters
 ; p - camera control parameters
 
-xmlFile="Z:\\conf\\Vimba\\prosilica.000F3101ABD0.20211225.xml"
-p=vimba_init("prosilica",xmlFile);,/noDev)
+xmlFile="Z:\\Projects\\conf\\Vimba\\prosilica.000F3101ABD0.20211225.xml"
+cameraID = 'DEV_000F3101ABD0'
+p=vimba_init("prosilica",cameraId,xmlFile);,/noDev)
 p=vimba_setParam(expo=0.015)
 
 ;-----  prepare object array for parallel processing -----------
