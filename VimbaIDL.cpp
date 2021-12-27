@@ -76,6 +76,9 @@ std::atomic<bool> flag_cam = false;
 
 VmbUint32_t TIMEOUT = 20 * 1000;
 
+std::atomic<UINT16> anFrame;
+std::atomic<UINT16> acFrame;
+
 
 bool checkSuccess(VmbErrorType err, const char * text)
 {
@@ -254,7 +257,8 @@ public:
 		// synchronous multiframe : without the following line
 		// asynchronous preview   : with    the following line
 		//m_pCamera->QueueFrame(pFrame);
-
+		
+		acFrame.store(acFrame.load()+1);
 	}
 
 	int myCount = 0;
@@ -590,7 +594,7 @@ int grab_multiframe(vimba::FramePtrVector & pFrames)
 
 
 	// check complete
-
+	/*
 	for (vimba::FramePtrVector::iterator iter = pFrames.begin(); pFrames.end() != iter; ++iter)
 	{
 		int count = 0;
@@ -602,6 +606,18 @@ int grab_multiframe(vimba::FramePtrVector & pFrames)
 			if (count > 10 * 1000) break; // timeout = 20 [sec] for each image
 		} while (eReceiveStatus != VmbFrameStatusComplete);
 	}
+	*/
+	{
+		UINT64 count = 0;
+		UINT64 target = 10 * 1000 * pFrames.size;
+		while (acFrame.load() < anFrame.load())
+		{
+			sleep_milisecond(2);
+			count += 1;
+			if (count > target) break;
+		}
+	}
+	
 
 
 
@@ -852,6 +868,8 @@ int IDL_STDCALL VimbaObs(int argc, void* argv[])
 
 	
 	UINT16 nFrame = (UINT16) *((UINT16*)argv[0]);
+	anFrame.store(nFrame);
+	acFrame.store(0);
 	//char message[100];
 	//sprintf_s(message, "nFrame=%u", nFrame);
 	//INFO::info(message);
