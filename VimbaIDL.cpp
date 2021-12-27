@@ -70,12 +70,14 @@ namespace vimba = AVT::VmbAPI;
 vimba::VimbaSystem& sys = vimba::VimbaSystem::GetInstance();
 std::atomic<bool> flag_sys = false;
 
-//: camera pointer
-vimba::CameraPtr pCamera;
-std::atomic<bool> flag_cam = false;
+VmbUint32_t TIMEOUT = 20 * 1000; //: 20 [sec]
 
-VmbUint32_t TIMEOUT = 20 * 1000;
-
+int init_sys()
+{
+	if (!checkSuccess(sys.Startup(), "init VimbaSystem")) return 0;
+	flag_sys = true;
+	return 1;
+}
 
 bool checkSuccess(VmbErrorType err, const char * text)
 {
@@ -237,8 +239,6 @@ public:
 	}
 };
 
-std::shared_ptr<PreviewHandler> pPreviewHandler;
-//PreviewHandler* pPreviewHandler=nullptr;
 
 class ObservationFrameObserver : virtual public vimba::IFrameObserver
 {
@@ -260,433 +260,444 @@ public:
 	int myCount = 0;
 };
 
-bool checkReady()
+class CameraHandler
 {
-	if (!flag_sys) {
-		INFO::error("Vimba System not ready");
-		return false;
-	}
-	if (!flag_cam) {
-		INFO::error("Camera not ready");
-		return false;
-	}
-	return true;
-}
+public:
 
-int init_sys()
-{
-	if (!checkSuccess(sys.Startup(), "init VimbaSystem")) return 0;
-	flag_sys = true;
-	return 1;
-}
-
-int init_camera(std::string & cameraID)
-{
-
-	if (!flag_sys) {
-		INFO::error("Vimba System not ready");
-		return 0;
-	}
-
-
-	if (cameraID.empty())
+	CameraHandler()
 	{
-		vimba::CameraPtrVector cameras;
+		//if (!init_camera(cameraID))
+		//{
+		//	char message[100];
+		//	sprintf_s(message, "failed to initialize camera %s", cameraID.c_str());
+		//	INFO::error("failed to initlized");
+		//}
 
-		if (!checkSuccess(sys.GetCameras(cameras), "searching available camera")) return 0;
+	}
 
-		if (cameras.empty())
-		{
-			INFO::error("no cameras found");
+	~CameraHandler()
+	{
+		if (flag_cam) pCamera->Close();
+		flag_cam = false;
+	}
+
+	bool checkReady()
+	{
+		if (!flag_sys) {
+			INFO::error("Vimba System not ready");
+			return false;
+		}
+		if (!flag_cam) {
+			INFO::error("Camera not ready");
+			return false;
+		}
+		return true;
+	}
+
+	int init_camera(std::string & cameraID)
+	{
+
+		if (!flag_sys) {
+			INFO::error("Vimba System not ready");
 			return 0;
 		}
 
-		if (!checkSuccess(cameras[0]->Open(VmbAccessModeFull), "open camera")) return 0;
 
-		pCamera = cameras[0];
-		if (!checkSuccess(pCamera->GetID(cameraID), "get current camera ID")) return 0;
-	}
-	else
-	{
-		if (!checkSuccess(sys.OpenCameraByID(cameraID.c_str(), VmbAccessModeFull, pCamera), "open camera by ID"))
-			return 0;
-	}
-
-	//char message[100];
-	//sprintf_s(message, "Camera %s", cameraID.c_str());
-	//INFO::info(message);
-
-	flag_cam = true;
-	return 1;
-}
-
-int init_preview_handler()
-{	
-	//if (pPreviewHandler != nullptr) 
-
-	//pPreviewHandler = new PreviewHandler(pCamera);
-
-	pPreviewHandler = std::make_shared<PreviewHandler>(pCamera);
-	return 1;
-}
-
-int close_camera()
-{
-	if (!flag_cam) {
-		INFO::error("flag_cam is flase before closing camera");
-		//return 0;
-	}
-	if (!checkSuccess(pCamera->Close(), "close camera")) return 0;
-	flag_cam = false;
-	return 1;
-}
-
-int close_sys()
-{
-	if (flag_cam) {
-		INFO::error("flag_cam is true. close camera before closing sys");
-		close_camera();
-	}
-
-	if (!flag_sys) {
-		INFO::error("flag_sys is flase before closing sys");
-		//return 0;
-	}
-	if (!checkSuccess(sys.Shutdown(), "close sys")) return 0;
-	flag_sys = false;
-
-	// release preview handler
-	//delete pPreviewHandler;
-
-	return 1;
-}
-
-int load_configuration(const std::string xmlFile)
-{
-	if (!checkReady()) return 0;
-
-	VmbFeaturePersistSettings_t settingsStruct;
-	checkSuccess(pCamera->LoadCameraSettings(xmlFile, &settingsStruct), "loading xml configuration file");
-
-	return 1;
-}
-
-int set_maximum_gev_packet()
-{
-	if (!checkReady()) return 0;
-
-	vimba::FeaturePtr pFeature;
-	if (!checkSuccess(pCamera->GetFeatureByName("GVSPAdjustPacketSize", pFeature), "get GeV packet feature"))
-		return 0;
-
-	if (!checkSuccess(pFeature->RunCommand(), "set GeV packet feature")) return 0;
-
-	{
-		bool bIsCommandDone = false;
-		do
+		if (cameraID.empty())
 		{
-			if (VmbErrorSuccess != pFeature->IsCommandDone(bIsCommandDone)) break;
-		} while (false == bIsCommandDone);
+			vimba::CameraPtrVector cameras;
 
-		//INFO::info("GVSPAdjustPacketSize RunCommand completed");
+			if (!checkSuccess(sys.GetCameras(cameras), "searching available camera")) return 0;
+
+			if (cameras.empty())
+			{
+				INFO::error("no cameras found");
+				return 0;
+			}
+
+			if (!checkSuccess(cameras[0]->Open(VmbAccessModeFull), "open camera")) return 0;
+
+			pCamera = cameras[0];
+			if (!checkSuccess(pCamera->GetID(cameraID), "get current camera ID")) return 0;
+		}
+		else
+		{
+			if (!checkSuccess(sys.OpenCameraByID(cameraID.c_str(), VmbAccessModeFull, pCamera), "open camera by ID"))
+				return 0;
+		}
+
+		//char message[100];
+		//sprintf_s(message, "Camera %s", cameraID.c_str());
+		//INFO::info(message);
+
+		flag_cam = true;
+		return 1;
 	}
 
-	return 1;
-}
+	int init_preview_handler()
+	{
+		//if (pPreviewHandler != nullptr) 
 
-int set_exposure(const double value, const std::string featureWord) // [microsecond]
-{
-	if (!checkReady()) return 0;
+		//pPreviewHandler = new PreviewHandler(pCamera);
 
-	vimba::FeaturePtr pFeature;
-	if (!checkSuccess(pCamera->GetFeatureByName(featureWord.c_str(), pFeature), "get exposure time feature")) return 0;
+		pPreviewHandler = std::make_shared<PreviewHandler>(pCamera);
+		return 1;
+	}
 
-	if (!checkSuccess(pFeature->SetValue(value), "set exposure time")) return 0;
+	int close_camera()
+	{
+		if (!flag_cam) {
+			INFO::error("flag_cam is flase before closing camera");
+			//return 0;
+		}
+		if (!checkSuccess(pCamera->Close(), "close camera")) return 0;
+		flag_cam = false;
+		return 1;
+	}
 
-	double current_value;
-	if (!checkSuccess(pFeature->GetValue(current_value), "get exposure time")) return 0;
+	int load_configuration(const std::string xmlFile)
+	{
+		if (!checkReady()) return 0;
 
-	char message[100];
-	sprintf_s(message, "Exposure = %.2f [ms]", current_value / 1000.);
-	INFO::info(message);
+		VmbFeaturePersistSettings_t settingsStruct;
+		checkSuccess(pCamera->LoadCameraSettings(xmlFile, &settingsStruct), "loading xml configuration file");
 
-	return 1;
-}
+		return 1;
+	}
 
-int get_exposure(double & value, const std::string featureWord)
-{
-	if (!checkReady()) return 0;
+	int set_maximum_gev_packet()
+	{
+		if (!checkReady()) return 0;
 
-	vimba::FeaturePtr pFeature;
-	if (!checkSuccess(pCamera->GetFeatureByName(featureWord.c_str(), pFeature), "get exposure time feature")) return 0;
-	if (!checkSuccess(pFeature->GetValue(value), "get exposure")) return 0;
+		vimba::FeaturePtr pFeature;
+		if (!checkSuccess(pCamera->GetFeatureByName("GVSPAdjustPacketSize", pFeature), "get GeV packet feature"))
+			return 0;
 
-	return 1;
-}
+		if (!checkSuccess(pFeature->RunCommand(), "set GeV packet feature")) return 0;
 
-// normally framerate is automatically set to 1/exposure, might deviate
-int set_framerate(const double value, const std::string featureWord)
-{
-	if (!checkReady()) return 0;
+		{
+			bool bIsCommandDone = false;
+			do
+			{
+				if (VmbErrorSuccess != pFeature->IsCommandDone(bIsCommandDone)) break;
+			} while (false == bIsCommandDone);
 
-	vimba::FeaturePtr pFeature;
-	if (!checkSuccess(pCamera->GetFeatureByName(featureWord.c_str(), pFeature), "get framerate feature")) return 0;
+			//INFO::info("GVSPAdjustPacketSize RunCommand completed");
+		}
 
-	if (!checkSuccess(pFeature->SetValue(value), "set framerate")) return 0;
+		return 1;
+	}
 
-	double current_value;
-	if (!checkSuccess(pFeature->GetValue(current_value), "get framerate")) return 0;
+	int set_exposure(const double value, const std::string featureWord) // [microsecond]
+	{
+		if (!checkReady()) return 0;
 
-	char message[100];
-	sprintf_s(message, "framerate = %.2f [hz]", current_value);
-	INFO::info(message);
+		vimba::FeaturePtr pFeature;
+		if (!checkSuccess(pCamera->GetFeatureByName(featureWord.c_str(), pFeature), "get exposure time feature")) return 0;
 
-	return 1;
-}
+		if (!checkSuccess(pFeature->SetValue(value), "set exposure time")) return 0;
 
-int get_framerate(double & value, const std::string featureWord)
-{
-	if (!checkReady()) return 0;
-
-	vimba::FeaturePtr pFeature;
-	if (!checkSuccess(pCamera->GetFeatureByName(featureWord.c_str(), pFeature), "get framerate feature")) return 0;
-	if (!checkSuccess(pFeature->GetValue(value), "get framerate")) return 0;
-
-	return 1;
-}
-
-int set_acquisition(const char * mode)
-{
-	if (!checkReady()) return 0;
-
-	vimba::FeaturePtr pFeature;
-	if (!checkSuccess(pCamera->GetFeatureByName("AcquisitionMode", pFeature), "get acquisition mode feature")) return 0;
-
-	char message[100];
-	sprintf_s(message, "set acuisition mode %s", mode);
-	if (!checkSuccess(pFeature->SetValue(mode), message)) return 0;
-
-	return 1;
-}
-
-int set_roi(const INT32 offsetx, const INT32 offsety, const INT32 width, const INT32 height)
-{
-	if (!checkReady()) return 0;
-
-	vimba::FeaturePtr pFeature;
-
-	INT64 current;
-
-	if (!checkSuccess(pCamera->GetFeatureByName("OffsetX", pFeature), "get OffsetX feature")) return 0;
-	pFeature->GetValue(current);
-	if (current != (INT64)offsetx)
-		if (!checkSuccess(pFeature->SetValue(offsetx), "set OffsetX")) return 0;
-
-	if (!checkSuccess(pCamera->GetFeatureByName("OffsetY", pFeature), "get OffsetY feature")) return 0;
-	pFeature->GetValue(current);
-	if (current != (INT64)offsety)
-		if (!checkSuccess(pFeature->SetValue(offsety), "set OffsetY")) return 0;
-
-	if (!checkSuccess(pCamera->GetFeatureByName("Height", pFeature), "get Height feature")) return 0;
-	pFeature->GetValue(current);
-	if (current != (INT64)height)
-		if (!checkSuccess(pFeature->SetValue(height), "set Height")) return 0;
-
-	if (!checkSuccess(pCamera->GetFeatureByName("Width", pFeature), "get Width feature")) return 0;
-	pFeature->GetValue(current);
-	if (current != (INT64)width)
-		if (!checkSuccess(pFeature->SetValue(width), "set Width")) return 0;
-
-	return 1;
-}
-
-//int set_bin(const INT16 binx, const INT16 biny, const INT32 widthMax, const INT32 heightMax)
-int set_bin(const INT16 binx, const INT16 biny)
-{
-	if (!checkReady()) return 0;
-
-	vimba::FeaturePtr pFeature;
-	INT64 currentx, currenty;
-
-	if (!checkSuccess(pCamera->GetFeatureByName("BinningHorizontal", pFeature), "get BinningHorizontal feature")) return 0;
-	pFeature->GetValue(currentx);
-	if (currentx != (INT64)binx)
-		if (!checkSuccess(pFeature->SetValue(binx), "set BinningHorizontal")) return 0;
-
-	if (!checkSuccess(pCamera->GetFeatureByName("BinningVertical", pFeature), "get BinningVertical feature")) return 0;
-	pFeature->GetValue(currenty);
-	if (currenty != (INT64)biny)
-		if (!checkSuccess(pFeature->SetValue(biny), "set BinningVertical")) return 0;
-
-	//if ((currentx < (INT64)binx) || (currenty < (INT64)biny)) {
-	//	set_roi(0, 0, widthMax/binx, heightMax/biny);
-	//}
-
-	if (false) {// get current image format
-		INT64 offsetx, offsety, width, height;
-		pCamera->GetFeatureByName("OffsetX", pFeature);
-		pFeature->GetValue(offsetx);
-		pCamera->GetFeatureByName("OffsetY", pFeature);
-		pFeature->GetValue(offsety);
-		pCamera->GetFeatureByName("Width", pFeature);
-		pFeature->GetValue(width);
-		pCamera->GetFeatureByName("Height", pFeature);
-		pFeature->GetValue(height);
+		double current_value;
+		if (!checkSuccess(pFeature->GetValue(current_value), "get exposure time")) return 0;
 
 		char message[100];
-		sprintf_s(message, "offsetX=%lld, offsetY=%lld, width=%lld, height=%lld", offsetx, offsety, width, height);
+		sprintf_s(message, "Exposure = %.2f [ms]", current_value / 1000.);
 		INFO::info(message);
+
+		return 1;
 	}
 
-	return 1;
-}
-
-
-
-int grab_multiframe(vimba::FramePtrVector & pFrames)
-{
-	if (!checkReady()) return 0;
-
-	VmbInt64_t nPLS; // Payload size value
-	vimba::FeaturePtr pFeature; // Generic feature pointer
-
-	//FramePtrVector pFrames(3);
-
-
-	// Get the image size for the required buffer
-	pCamera->GetFeatureByName("PayloadSize", pFeature);
-	pFeature->GetValue(nPLS);
-
-	// 
-	//checkSuccess(pCamera->GetFeatureByName("AcquisitionMode", pFeature), "Get AcquisitionMode");
-	//checkSuccess(pFeature->SetValue("Continuous"), "Set AcquisitionMode Value");
-
-	for (vimba::FramePtrVector::iterator iter = pFrames.begin(); pFrames.end() != iter; ++iter)
+	// normally framerate is automatically set to 1/exposure, might deviate
+	int set_framerate(const double value, const std::string featureWord)
 	{
-		// Allocate memory for frame buffer
-		(*iter).reset(new vimba::Frame(nPLS));
-		// [x] Register frame observer/callback for each frame
-		(*iter)->RegisterObserver(vimba::IFrameObserverPtr(new ObservationFrameObserver(pCamera)));
-		//announce frame to the API
-		checkSuccess(pCamera->AnnounceFrame(*iter), " announce frame");
+		if (!checkReady()) return 0;
+
+		vimba::FeaturePtr pFeature;
+		if (!checkSuccess(pCamera->GetFeatureByName(featureWord.c_str(), pFeature), "get framerate feature")) return 0;
+
+		if (!checkSuccess(pFeature->SetValue(value), "set framerate")) return 0;
+
+		double current_value;
+		if (!checkSuccess(pFeature->GetValue(current_value), "get framerate")) return 0;
+
+		char message[100];
+		sprintf_s(message, "framerate = %.2f [hz]", current_value);
+		INFO::info(message);
+
+		return 1;
+	}
+
+	int get_framerate(double & value, const std::string featureWord)
+	{
+		if (!checkReady()) return 0;
+
+		vimba::FeaturePtr pFeature;
+		if (!checkSuccess(pCamera->GetFeatureByName(featureWord.c_str(), pFeature), "get framerate feature")) return 0;
+		if (!checkSuccess(pFeature->GetValue(value), "get framerate")) return 0;
+
+		return 1;
+	}
+
+	int set_acquisition(const char * mode)
+	{
+		if (!checkReady()) return 0;
+
+		vimba::FeaturePtr pFeature;
+		if (!checkSuccess(pCamera->GetFeatureByName("AcquisitionMode", pFeature), "get acquisition mode feature")) return 0;
+
+		char message[100];
+		sprintf_s(message, "set acuisition mode %s", mode);
+		if (!checkSuccess(pFeature->SetValue(mode), message)) return 0;
+
+		return 1;
+	}
+
+	int set_roi(const INT32 offsetx, const INT32 offsety, const INT32 width, const INT32 height)
+	{
+		if (!checkReady()) return 0;
+
+		vimba::FeaturePtr pFeature;
+
+		INT64 current;
+
+		if (!checkSuccess(pCamera->GetFeatureByName("OffsetX", pFeature), "get OffsetX feature")) return 0;
+		pFeature->GetValue(current);
+		if (current != (INT64)offsetx)
+			if (!checkSuccess(pFeature->SetValue(offsetx), "set OffsetX")) return 0;
+
+		if (!checkSuccess(pCamera->GetFeatureByName("OffsetY", pFeature), "get OffsetY feature")) return 0;
+		pFeature->GetValue(current);
+		if (current != (INT64)offsety)
+			if (!checkSuccess(pFeature->SetValue(offsety), "set OffsetY")) return 0;
+
+		if (!checkSuccess(pCamera->GetFeatureByName("Height", pFeature), "get Height feature")) return 0;
+		pFeature->GetValue(current);
+		if (current != (INT64)height)
+			if (!checkSuccess(pFeature->SetValue(height), "set Height")) return 0;
+
+		if (!checkSuccess(pCamera->GetFeatureByName("Width", pFeature), "get Width feature")) return 0;
+		pFeature->GetValue(current);
+		if (current != (INT64)width)
+			if (!checkSuccess(pFeature->SetValue(width), "set Width")) return 0;
+
+		return 1;
+	}
+
+	//int set_bin(const INT16 binx, const INT16 biny, const INT32 widthMax, const INT32 heightMax)
+	int set_bin(const INT16 binx, const INT16 biny)
+	{
+		if (!checkReady()) return 0;
+
+		vimba::FeaturePtr pFeature;
+		INT64 currentx, currenty;
+
+		if (!checkSuccess(pCamera->GetFeatureByName("BinningHorizontal", pFeature), "get BinningHorizontal feature")) return 0;
+		pFeature->GetValue(currentx);
+		if (currentx != (INT64)binx)
+			if (!checkSuccess(pFeature->SetValue(binx), "set BinningHorizontal")) return 0;
+
+		if (!checkSuccess(pCamera->GetFeatureByName("BinningVertical", pFeature), "get BinningVertical feature")) return 0;
+		pFeature->GetValue(currenty);
+		if (currenty != (INT64)biny)
+			if (!checkSuccess(pFeature->SetValue(biny), "set BinningVertical")) return 0;
+
+		//if ((currentx < (INT64)binx) || (currenty < (INT64)biny)) {
+		//	set_roi(0, 0, widthMax/binx, heightMax/biny);
+		//}
+
+		if (false) {// get current image format
+			INT64 offsetx, offsety, width, height;
+			pCamera->GetFeatureByName("OffsetX", pFeature);
+			pFeature->GetValue(offsetx);
+			pCamera->GetFeatureByName("OffsetY", pFeature);
+			pFeature->GetValue(offsety);
+			pCamera->GetFeatureByName("Width", pFeature);
+			pFeature->GetValue(width);
+			pCamera->GetFeatureByName("Height", pFeature);
+			pFeature->GetValue(height);
+
+			char message[100];
+			sprintf_s(message, "offsetX=%lld, offsetY=%lld, width=%lld, height=%lld", offsetx, offsety, width, height);
+			INFO::info(message);
+		}
+
+		return 1;
+	}
+
+	int close_sys()
+	{
+		if (flag_cam) {
+			INFO::error("flag_cam is true. close camera before closing sys");
+			close_camera();
+		}
+
+		if (!flag_sys) {
+			INFO::error("flag_sys is flase before closing sys");
+			//return 0;
+		}
+		if (!checkSuccess(sys.Shutdown(), "close sys")) return 0;
+		flag_sys = false;
+
+		// release preview handler
+		//delete pPreviewHandler;
+
+		return 1;
+	}
+
+	int grab_multiframe(vimba::FramePtrVector & pFrames)
+	{
+		if (!checkReady()) return 0;
+
+		VmbInt64_t nPLS; // Payload size value
+		vimba::FeaturePtr pFeature; // Generic feature pointer
+
+		//FramePtrVector pFrames(3);
+
+
+		// Get the image size for the required buffer
+		pCamera->GetFeatureByName("PayloadSize", pFeature);
+		pFeature->GetValue(nPLS);
+
+		// 
+		//checkSuccess(pCamera->GetFeatureByName("AcquisitionMode", pFeature), "Get AcquisitionMode");
+		//checkSuccess(pFeature->SetValue("Continuous"), "Set AcquisitionMode Value");
+
+		for (vimba::FramePtrVector::iterator iter = pFrames.begin(); pFrames.end() != iter; ++iter)
+		{
+			// Allocate memory for frame buffer
+			(*iter).reset(new vimba::Frame(nPLS));
+			// [x] Register frame observer/callback for each frame
+			(*iter)->RegisterObserver(vimba::IFrameObserverPtr(new ObservationFrameObserver(pCamera)));
+			//announce frame to the API
+			checkSuccess(pCamera->AnnounceFrame(*iter), " announce frame");
+		}
+
+
+		// start the capture engine (API)
+		checkSuccess(pCamera->StartCapture(), "start capture");
+
+
+		// put frame into the frame queue
+		for (vimba::FramePtrVector::iterator iter = pFrames.begin(); pFrames.end() != iter; ++iter)
+			checkSuccess(pCamera->QueueFrame(*iter), "queue frame");
+
+
+
+		// Start the acuisition engine (camera)
+		pCamera->GetFeatureByName("AcquisitionStart", pFeature);
+		pFeature->RunCommand();
+
+		// ... frame being filled asynchronously
+
+
+		// check complete
+
+		for (vimba::FramePtrVector::iterator iter = pFrames.begin(); pFrames.end() != iter; ++iter)
+		{
+			int count = 0;
+			VmbFrameStatusType eReceiveStatus;
+			do {
+				(*iter)->GetReceiveStatus(eReceiveStatus);
+				sleep_milisecond(2);
+				count += 1;
+				if (count > 10 * 1000) break; // timeout = 20 [sec] for each image
+			} while (eReceiveStatus != VmbFrameStatusComplete);
+		}
+
+
+
+		// Stop the acquisition engine(camera)
+		pCamera->GetFeatureByName("AcquisitionStop", pFeature);
+		pFeature->RunCommand();
+
+		// Stop the capture engine (API) (correspond to pCamera->StartCapture )
+		checkSuccess(pCamera->EndCapture(), "end capture");
+		// flush the frame queue (correspond to pCamera->QueueFrame )
+		checkSuccess(pCamera->FlushQueue(), " flush queue");
+		// revoke all frame from the API (correspond to pCamera->AnnounceFrame )
+		checkSuccess(pCamera->RevokeAllFrames(), " revoke all frames");
+		// unregister the frame observer
+		for (vimba::FramePtrVector::iterator iter = pFrames.begin(); pFrames.end() != iter; ++iter)
+			(*iter)->UnregisterObserver();
+
+		// FramePtr is a smart pointer, so it will release itself 
+
+		return 1;
+	}
+
+	int init_preview()
+	{
+		if (!checkReady()) return 0;
+
+		//: allocate frame
+		VmbInt64_t nPLS = get_nPLS(pCamera);
+		for (vimba::FramePtrVector::iterator iter = pPreviewHandler->async_pframes.begin(); pPreviewHandler->async_pframes.end() != iter; ++iter)
+		{
+			// Allocate memory for frame buffer
+			(*iter).reset(new vimba::Frame(nPLS));
+			// [x] Register frame observer/callback for each frame
+			(*iter)->RegisterObserver(vimba::IFrameObserverPtr(new PreviewFrameObserver(pCamera, pPreviewHandler)));
+			//announce frame to the API
+			checkSuccess(pCamera->AnnounceFrame(*iter), " announce frame preview");
+		}
+		//pPreviewHandler->async_pframe.reset(new vimba::Frame(nPLS));
+
+		/*
+		//:Register frame observer/callback for each frame
+		checkSuccess(
+			pPreviewHandler->async_pframe->RegisterObserver(vimba::IFrameObserverPtr(new PreviewFrameObserver(pCamera, pPreviewHandler))),
+			"register observer preview"
+		);
+		//: announce frame to the API
+		checkSuccess( pCamera->AnnounceFrame(pPreviewHandler->async_pframe), "announce frame preview");
+		*/
+
+		//: start the capture engine (API)
+		checkSuccess(pCamera->StartCapture(), "start capture preview");
+
+		//: put frame into the frame queue
+		for (vimba::FramePtrVector::iterator iter = pPreviewHandler->async_pframes.begin(); pPreviewHandler->async_pframes.end() != iter; ++iter)
+			checkSuccess(pCamera->QueueFrame((*iter)), "queue frame preview");
+
+		//: Start the acuisition engine (camera)
+		vimba::FeaturePtr pFeature;
+		pCamera->GetFeatureByName("AcquisitionStart", pFeature);
+		checkSuccess(pFeature->RunCommand(), "acquisition start preview");
+
+		return 1;
+	}
+
+	int close_preview()
+	{
+		if (!checkReady()) return 0;
+
+		//: Stop the acquisition engine(camera)
+		vimba::FeaturePtr pFeature;
+		pCamera->GetFeatureByName("AcquisitionStop", pFeature);
+		pFeature->RunCommand();
+
+		//: Stop the capture engine (API) (correspond to pCamera->StartCapture )
+		pCamera->EndCapture();
+		//: flush the frame queue (correspond to pCamera->QueueFrame )
+		pCamera->FlushQueue();
+		//: revoke all frame from the API (correspond to pCamera->AnnounceFrame )
+		pCamera->RevokeAllFrames();
+
+		for (vimba::FramePtrVector::iterator iter = pPreviewHandler->async_pframes.begin(); pPreviewHandler->async_pframes.end() != iter; ++iter)
+			(*iter)->UnregisterObserver();
+
+		return 1;
 	}
 
 
-	// start the capture engine (API)
-	checkSuccess( pCamera->StartCapture(), "start capture");
+	//: members
+	vimba::CameraPtr pCamera; //: camera pointer
+	std::atomic<bool> flag_cam = false; //: whether camera in this handler been initialized
+	std::shared_ptr<PreviewHandler> pPreviewHandler; //: preview handler
+};
 
-
-	// put frame into the frame queue
-	for (vimba::FramePtrVector::iterator iter = pFrames.begin(); pFrames.end() != iter; ++iter)
-		checkSuccess( pCamera->QueueFrame(*iter), "queue frame");
-
-
-
-	// Start the acuisition engine (camera)
-	pCamera->GetFeatureByName("AcquisitionStart", pFeature);
-	pFeature->RunCommand();
-
-	// ... frame being filled asynchronously
-
-
-	// check complete
-
-	for (vimba::FramePtrVector::iterator iter = pFrames.begin(); pFrames.end() != iter; ++iter)
-	{
-		int count = 0;
-		VmbFrameStatusType eReceiveStatus;
-		do {
-			(*iter)->GetReceiveStatus(eReceiveStatus);
-			sleep_milisecond(2);
-			count += 1;
-			if (count > 10 * 1000) break; // timeout = 20 [sec] for each image
-		} while (eReceiveStatus != VmbFrameStatusComplete);
-	}
-
-
-
-	// Stop the acquisition engine(camera)
-	pCamera->GetFeatureByName("AcquisitionStop", pFeature);
-	pFeature->RunCommand();
-
-	// Stop the capture engine (API) (correspond to pCamera->StartCapture )
-	checkSuccess( pCamera->EndCapture(), "end capture");
-	// flush the frame queue (correspond to pCamera->QueueFrame )
-	checkSuccess( pCamera->FlushQueue(), " flush queue");
-	// revoke all frame from the API (correspond to pCamera->AnnounceFrame )
-	checkSuccess( pCamera->RevokeAllFrames(), " revoke all frames");
-	// unregister the frame observer
-	for (vimba::FramePtrVector::iterator iter = pFrames.begin(); pFrames.end() != iter; ++iter)
-		(*iter)->UnregisterObserver();
-
-	// FramePtr is a smart pointer, so it will release itself 
-	
-	return 1;
-}
-
-int init_preview()
-{
-	if (!checkReady()) return 0;
-
-	//: allocate frame
-	VmbInt64_t nPLS = get_nPLS(pCamera);
-	for (vimba::FramePtrVector::iterator iter = pPreviewHandler->async_pframes.begin(); pPreviewHandler->async_pframes.end() != iter; ++iter)
-	{
-		// Allocate memory for frame buffer
-		(*iter).reset(new vimba::Frame(nPLS));
-		// [x] Register frame observer/callback for each frame
-		(*iter)->RegisterObserver(vimba::IFrameObserverPtr(new PreviewFrameObserver(pCamera, pPreviewHandler)));
-		//announce frame to the API
-		checkSuccess(pCamera->AnnounceFrame(*iter), " announce frame preview");
-	}	
-	//pPreviewHandler->async_pframe.reset(new vimba::Frame(nPLS));
-	
-	/*
-	//:Register frame observer/callback for each frame
-	checkSuccess(
-		pPreviewHandler->async_pframe->RegisterObserver(vimba::IFrameObserverPtr(new PreviewFrameObserver(pCamera, pPreviewHandler))),
-		"register observer preview"
-	);
-	//: announce frame to the API
-	checkSuccess( pCamera->AnnounceFrame(pPreviewHandler->async_pframe), "announce frame preview");
-	*/
-
-	//: start the capture engine (API)
-	checkSuccess( pCamera->StartCapture(), "start capture preview");
-	
-	//: put frame into the frame queue
-	for (vimba::FramePtrVector::iterator iter = pPreviewHandler->async_pframes.begin(); pPreviewHandler->async_pframes.end() != iter; ++iter)
-		checkSuccess( pCamera->QueueFrame((*iter)), "queue frame preview");
-	
-	//: Start the acuisition engine (camera)
-	vimba::FeaturePtr pFeature;
-	pCamera->GetFeatureByName("AcquisitionStart", pFeature);
-	checkSuccess( pFeature->RunCommand(), "acquisition start preview");
-
-	return 1;
-}
-
-int close_preview()
-{
-	if (!checkReady()) return 0;
-
-	//: Stop the acquisition engine(camera)
-	vimba::FeaturePtr pFeature;
-	pCamera->GetFeatureByName("AcquisitionStop", pFeature);
-	pFeature->RunCommand();
-
-	//: Stop the capture engine (API) (correspond to pCamera->StartCapture )
-	pCamera->EndCapture();
-	//: flush the frame queue (correspond to pCamera->QueueFrame )
-	pCamera->FlushQueue();
-	//: revoke all frame from the API (correspond to pCamera->AnnounceFrame )
-	pCamera->RevokeAllFrames();
-
-	for (vimba::FramePtrVector::iterator iter = pPreviewHandler->async_pframes.begin();  pPreviewHandler->async_pframes.end() != iter; ++iter)
-		(*iter)->UnregisterObserver();
-
-	return 1;
-}
+//: vector of camera handler pointers
+std::vector<CameraHandler*> pCameraHandlers;
 
 
 /****************************************************************/
@@ -701,10 +712,26 @@ std::string getIDLString(const void* argv)
 	return std::move(str);
 }
 
+INT16 getIDLShort(const void* argv)
+{
+	INT16 number = (INT16) *((INT16*)argv);
+	return number;
 
+}
 
+int checkCameraHandlersLength(int num)
+{
+	if (pCameraHandlers.size != num)
+	{
+		char message[100];
+		sprintf_s(message, "the camera to init is number %d [starting from 0], but already has %d CameraHandlers", num, pCameraHandlers.size);
+		INFO::error(message);
 
+		return 0;
+	}
 
+	return 1;
+}
 /****************************************************************/
 /*  camera connection
 /*  IDL>  x=call_external(dll,'VimbaInit')
@@ -718,8 +745,13 @@ int IDL_STDCALL VimbaInit(int argc, void* argv[])
 
 int IDL_STDCALL VimbaInitCamera(int argc, void* argv[])
 {
+	auto num = getIDLShort(argv[0]);
+	if (!checkCameraHandlersLength(num)) return 0;
+
+	CameraHandler* pchandler = new CameraHandler();
+
 	//std::string cameraID = "";
-	std::string cameraID = getIDLString(argv[0]);
+	std::string cameraID = getIDLString(argv[1]);
 	if (!init_camera(cameraID)) return 0;
 
 
@@ -746,6 +778,16 @@ int IDL_STDCALL VimbaInitCamera(int argc, void* argv[])
 
 int IDL_STDCALL VimbaClose(int argc, void* argv[])
 {
+
+	//for (auto p : v)
+	//{
+	//	delete p;
+	//}
+	//v.clear();
+
+	//: 1. close all camera
+	//: 2. delete all camerahandler
+	//: 3. close sys
 
 	if (!close_camera()) {
 		INFO::error("failed to close camera");
