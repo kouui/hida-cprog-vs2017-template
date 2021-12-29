@@ -944,6 +944,30 @@ int IDL_STDCALL StopVimbaPreview(int argc, void* argv[])
 }
 
 /****************************************************************/
+/* get the current preview image (asynchrnously) 
+/* of all available cameras
+/* IDL>  x=call_external(dll,'GetVimbaPreviewAll', 2, img1, img2)
+/****************************************************************/
+int IDL_STDCALL GetVimbaPreviewAll(int argc, void* argv[])
+{
+	auto num = getIDLShort(argv[0]);
+	if (!checkNumAvailable(num)) return 0;
+
+	
+	//std::vector<UINT16*> idlBufferVec(num);
+	for (int i = 0; i < num; ++i)
+	{
+		UINT16* idlBuffer = (UINT16*)argv[i + 2];  // idl buffer for 2d image array
+		//idlBufferVec.push_back(idlBuffer);
+		
+		auto pchandler = pCameraHandlers.at(i);
+		pchandler->pPreviewHandler->copy_image(idlBuffer);
+	}
+
+	return 1;
+}
+
+/****************************************************************/
 /*  camera grab image sequence (synchronously) with header
 /*  IDL>  x=call_external(dll,'VimbaObs', 0, nimg, imgs, times, framerate, "AqcuisitionFrameRate")
 /****************************************************************/
@@ -1025,6 +1049,7 @@ int IDL_STDCALL VimbaObs(int argc, void* argv[])
 /****************************************************************/
 int IDL_STDCALL VimbaObsAll(int argc, void* argv[])
 {
+	
 	auto num = getIDLShort(argv[0]);
 	if (!checkNumAvailable(num)) return 0;
 
@@ -1035,7 +1060,7 @@ int IDL_STDCALL VimbaObsAll(int argc, void* argv[])
 	std::vector<vimba::FramePtrVector> pFramesVector;
 	for (int i = 0; i < num; ++i)
 	{
-		UINT16* idlBuffer = (UINT16*)argv[i+1];  // idl buffer for 3d image array
+		UINT16* idlBuffer = (UINT16*)argv[i+2];  // idl buffer for 3d image array
 		idlBufferVec.push_back( idlBuffer );
 
 		vimba::FramePtrVector pFrames(nFrame);

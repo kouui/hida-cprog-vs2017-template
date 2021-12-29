@@ -11,6 +11,7 @@ EXPORTS
 	StartVimbaPreview
 	GetVimbaPreview
 	StopVimbaPreview
+	GetVimbaPreviewAll
 	VimbaObs
 	VimbaObsAll
 	VimbaRoi
