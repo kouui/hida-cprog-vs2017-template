@@ -15,3 +15,8 @@ EXPORTS
 	VimbaSnap
 	VimbaRoi
 	VimbaBin
+	VimbaPrepareExtTrigger
+	VimbaExtTriggerOn
+	VimbaExtTriggerOff
+	VimbaExtTriggerPositive
+	VimbaExtTriggerNegative

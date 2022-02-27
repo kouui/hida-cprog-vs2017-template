@@ -212,10 +212,12 @@ public:
 		isBusy.store(false);
 	}
 
-	vimba::FramePtrVector async_pframes = vimba::FramePtrVector(2);
+	vimba::FramePtrVector async_pframes = vimba::FramePtrVector(1);
 	std::atomic<bool> isBusy = false;
 	VmbUint32_t imageSize;
 	VmbUchar_t* pimage;
+
+	//std::string extTriggerMode;
 	
 
 };
@@ -609,7 +611,7 @@ int grab_multiframe(vimba::FramePtrVector & pFrames)
 	*/
 	{
 		UINT64 count = 0;
-		UINT64 target = 10 * 1000 * pFrames.size;
+		UINT64 target = 10 * 1000 * pFrames.size();
 		while (acFrame.load() < anFrame.load())
 		{
 			sleep_milisecond(2);
@@ -643,6 +645,16 @@ int grab_multiframe(vimba::FramePtrVector & pFrames)
 int init_preview()
 {
 	if (!checkReady()) return 0;
+
+//	{// check current external trigger mode
+//		vimba::FeaturePtr pFeature;
+//		pCamera->GetFeatureByName("TriggerMode", pFeature);
+//		pFeature->GetValue( pPreviewHandler->extTriggerMode );
+//		if (!(pPreviewHandler->extTriggerMode.compare("On")))
+//			pFeature->SetValue("Off");
+//	}
+
+	//pPreviewHandler->async_pframes = vimba::FramePtrVector(1);
 
 	//: allocate frame
 	VmbInt64_t nPLS = get_nPLS(pCamera);
@@ -686,22 +698,81 @@ int close_preview()
 {
 	if (!checkReady()) return 0;
 
+//	{// restore current external trigger mode if 
+//		vimba::FeaturePtr pFeature;
+//		pCamera->GetFeatureByName("TriggerMode", pFeature);
+//		if (!(pPreviewHandler->extTriggerMode.compare("On")))
+//			pFeature->SetValue("On");
+//	}
+
 	//: Stop the acquisition engine(camera)
 	vimba::FeaturePtr pFeature;
 	pCamera->GetFeatureByName("AcquisitionStop", pFeature);
-	pFeature->RunCommand();
+	checkSuccess(pFeature->RunCommand(), "AcquisitionStop preview");
+	sleep_milisecond(500);
 
+	
 	//: Stop the capture engine (API) (correspond to pCamera->StartCapture )
-	pCamera->EndCapture();
+	checkSuccess(pCamera->EndCapture(),"EndCapture preview");
+	sleep_milisecond(500);
 	//: flush the frame queue (correspond to pCamera->QueueFrame )
-	pCamera->FlushQueue();
+	checkSuccess(pCamera->FlushQueue(), "FlushQueue preview");
+	sleep_milisecond(500);
 	//: revoke all frame from the API (correspond to pCamera->AnnounceFrame )
-	pCamera->RevokeAllFrames();
+	checkSuccess(pCamera->RevokeAllFrames(), "RevokeAllFrames preview");
+	sleep_milisecond(500);
 
 	for (vimba::FramePtrVector::iterator iter = pPreviewHandler->async_pframes.begin();  pPreviewHandler->async_pframes.end() != iter; ++iter)
-		(*iter)->UnregisterObserver();
+		checkSuccess((*iter)->UnregisterObserver(), "UnregisterObserver preview");
+
+	//INFO::info("preview stopped");
+	return 1;
+}
+
+
+int prepare_extTrigger()
+{
+	if (!checkReady()) return 0;
+	vimba::FeaturePtr pFeature;
+
+	if (!checkSuccess(pCamera->GetFeatureByName("TriggerSelector", pFeature), "get TriggerSelector feature")) return 0;
+	if (!checkSuccess(pFeature->SetValue("AcquisitionStart"), "set TriggerSelector AcquisitionStart")) return 0;
+
+	if (!checkSuccess(pCamera->GetFeatureByName("TriggerSource", pFeature), "get TriggerSource feature")) return 0;
+	if (!checkSuccess(pFeature->SetValue("Line1"), "set TriggerSource Line1")) return 0;
+
+	//if (!checkSuccess(pCamera->GetFeatureByName("TriggerActivation", pFeature), "get TriggerActivation feature")) return 0;
+	//if (!checkSuccess(pFeature->SetValue("FallingEdge"), "set TriggerActivation FallingEdge")) return 0;
 
 	return 1;
+}
+
+int set_extTrigger(bool status)
+{
+	if (!checkReady()) return 0;
+	vimba::FeaturePtr pFeature;
+
+	//pCamera->GetFeatureByName("TriggerSelector", pFeature);
+	//pFeature->SetValue("AcquisitionStart");
+	//pCamera->GetFeatureByName("TriggerSource", pFeature);
+	//pFeature->SetValue("Line1");
+
+	if (!checkSuccess(pCamera->GetFeatureByName("TriggerSelector", pFeature), "get TriggerSelector feature")) return 0;
+	if (!checkSuccess(pFeature->SetValue("AcquisitionStart"), "set TriggerSelector AcquisitionStart")) return 0;
+
+	if (!checkSuccess(pCamera->GetFeatureByName("TriggerSource", pFeature), "get TriggerSource feature")) return 0;
+	if (!checkSuccess(pFeature->SetValue("Line1"), "set TriggerSource Line1")) return 0;
+
+	if (!checkSuccess(pCamera->GetFeatureByName("TriggerMode", pFeature), "get TriggerMode feature")) return 0;
+	
+	if (status) {
+		if (!checkSuccess(pFeature->SetValue("On"), "set TriggerMode On")) return 0;
+		return 1;
+	}
+	else {
+		if (!checkSuccess(pFeature->SetValue("Off"), "set TriggerMode Off")) return 0;
+		return 1;
+	}
 }
 
 
@@ -1021,3 +1092,74 @@ int IDL_STDCALL VimbaBin(int argc, void* argv[])
 
 	return 1;
 }
+
+/****************************************************************/
+/*  prepare external trigger
+/*  IDL>  x=call_external(dll,'VimbaPrepareExtTrigger')
+/****************************************************************/
+
+int IDL_STDCALL VimbaPrepareExtTrigger(int argc, void* argv[])
+{
+
+	//INFO::info("Camera disconnected");
+	return prepare_extTrigger();
+}
+
+/****************************************************************/
+/*  turn on external trigger
+/*  IDL>  x=call_external(dll,'VimbaExtTriggerOn')
+/****************************************************************/
+
+int IDL_STDCALL VimbaExtTriggerOn(int argc, void* argv[])
+{
+
+	//INFO::info("External Trigger On");
+	return set_extTrigger(true);
+}
+
+/****************************************************************/
+/*  turn off external trigger
+/*  IDL>  x=call_external(dll,'VimbaExtTriggerOff')
+/****************************************************************/
+
+int IDL_STDCALL VimbaExtTriggerOff(int argc, void* argv[])
+{
+
+	//INFO::info("Camera disconnected");
+	return set_extTrigger(false);
+}
+
+
+/****************************************************************/
+/*  external trigger polarity positive
+/*  IDL>  x=call_external(dll,'VimbaExtTriggerPositive')
+/****************************************************************/
+
+int IDL_STDCALL VimbaExtTriggerPositive(int argc, void* argv[])
+{
+	if (!checkReady()) return 0;
+	vimba::FeaturePtr pFeature;
+
+	if (!checkSuccess(pCamera->GetFeatureByName("TriggerActivation", pFeature), "get TriggerActivation feature")) return 0;
+	if (!checkSuccess(pFeature->SetValue("RisingEdge"), "set TriggerActivation RisingEdge")) return 0;
+
+	return 1;
+}
+
+
+/****************************************************************/
+/*  external trigger polarity negative
+/*  IDL>  x=call_external(dll,'VimbaExtTriggerNegative')
+/****************************************************************/
+
+int IDL_STDCALL VimbaExtTriggerNegative(int argc, void* argv[])
+{
+	if (!checkReady()) return 0;
+	vimba::FeaturePtr pFeature;
+
+	if (!checkSuccess(pCamera->GetFeatureByName("TriggerActivation", pFeature), "get TriggerActivation feature")) return 0;
+	if (!checkSuccess(pFeature->SetValue("FallingEdge"), "set TriggerActivation FallingEdge")) return 0;
+
+	return 1;
+}
+
